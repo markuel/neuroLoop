@@ -19,7 +19,13 @@ function BrainMesh() {
     geo.setAttribute('position', new THREE.Float32BufferAttribute(mesh.vertices, 3))
     geo.setIndex(new THREE.BufferAttribute(mesh.faces, 1))
     geo.computeVertexNormals()
-    const colors = new Float32Array(mesh.nVertices * 3).fill(0.3)
+    // Initialize to gray brain surface color (matches sulcal background)
+    const colors = new Float32Array(mesh.nVertices * 3)
+    for (let i = 0; i < mesh.nVertices; i++) {
+      colors[i * 3] = 0.42
+      colors[i * 3 + 1] = 0.42
+      colors[i * 3 + 2] = 0.42
+    }
     geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
     return geo
   }, [mesh])
