@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .s3 import presigned_upload_url
+from .mesh import get_fsaverage5_mesh
 
 app = FastAPI(title="neuroLoop API")
 app.add_middleware(
@@ -24,3 +25,7 @@ def upload(req: UploadRequest):
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+@app.get("/api/mesh")
+def mesh():
+    return get_fsaverage5_mesh()
