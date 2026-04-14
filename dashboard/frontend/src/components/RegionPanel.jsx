@@ -10,11 +10,50 @@ const COARSE_COLORS = {
   'Default': '#6b7280',
 }
 
+// Human-readable descriptions for functional network groups
+const GROUP_DESCRIPTIONS = {
+  'Visual': 'Processing what you see',
+  'Somatomotor': 'Movement and physical sensation',
+  'Dorsal Attention': 'Focusing on something specific',
+  'Ventral Attention': 'Noticing something unexpected',
+  'Limbic': 'Emotion and memory',
+  'Frontoparietal': 'Thinking and decision making',
+  'Default': 'Mind wandering and self-reflection',
+}
+
+// Human-readable descriptions for fine-grained networks
+const FINE_DESCRIPTIONS = {
+  'Primary Visual': 'Basic image processing',
+  'Early Visual': 'Detecting edges and shapes',
+  'Dorsal Stream Visual': 'Tracking where things are',
+  'Ventral Stream Visual': 'Recognizing what things are',
+  'MT+ Complex and Neighboring Areas': 'Perceiving motion',
+  'Somatosensory and Motor': 'Touch and movement control',
+  'Paracentral Lobular and Mid-Cingulate': 'Body awareness and motivation',
+  'Premotor': 'Planning movements',
+  'Posterior Opercular': 'Body sensation processing',
+  'Early Auditory': 'Basic sound processing',
+  'Auditory Association': 'Understanding speech and complex sounds',
+  'Insular and Frontal Opercular': 'Gut feelings and emotional awareness',
+  'Medial Temporal': 'Forming new memories',
+  'Lateral Temporal': 'Understanding meaning and language',
+  'Temporo-Parieto-Occipital Junction': 'Integrating sight, sound, and language',
+  'Superior Parietal': 'Spatial reasoning and tool use',
+  'Inferior Parietal': 'Number sense and abstract thought',
+  'Posterior Cingulate': 'Memory retrieval and self-reflection',
+  'Anterior Cingulate and Medial Prefrontal': 'Social thinking and error monitoring',
+  'Orbital and Polar Frontal': 'Judging value and reward',
+  'Inferior Frontal': 'Speech production and grammar',
+  'Dorsolateral Prefrontal': 'Working memory and planning',
+}
+
 export default function RegionPanel() {
   const regions = useStore((s) => s.regions)
   const fineGroups = useStore((s) => s.fineGroups)
   const coarseGroups = useStore((s) => s.coarseGroups)
   const timestep = useStore((s) => s.timestep)
+  const globalVmin = useStore((s) => s.globalVmin)
+  const globalVmax = useStore((s) => s.globalVmax)
 
   if (!regions) {
     return (
@@ -24,38 +63,45 @@ export default function RegionPanel() {
     )
   }
 
+  // Use global scale so bars reflect absolute activation, not relative to top region
+  const scaleMax = globalVmax || 1
+
   const entries = Object.entries(regions)
     .map(([name, values]) => ({ name, value: values[timestep] ?? 0 }))
     .sort((a, b) => b.value - a.value)
     .slice(0, 10)
 
-  const maxVal = entries[0]?.value || 1
-
   return (
     <div className="h-full bg-gray-950 p-4 overflow-y-auto">
-      <div className="text-xs text-gray-500 font-semibold mb-2">
-        TOP ACTIVATED REGIONS <span className="text-gray-600 font-normal">@ t={timestep}s</span>
+      <div className="text-xs text-gray-500 font-semibold mb-3">
+        BRAIN ACTIVITY <span className="text-gray-600 font-normal">@ t={timestep}s</span>
       </div>
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-2">
         {entries.map(({ name, value }) => {
           const coarse = coarseGroups?.[name] || ''
           const fine = fineGroups?.[name] || ''
           const color = COARSE_COLORS[coarse] || '#6b7280'
-          const pct = maxVal > 0 ? (value / maxVal) * 100 : 0
+          const pct = Math.max(0, Math.min(100, (value / scaleMax) * 100))
+          const fineDesc = FINE_DESCRIPTIONS[fine] || fine
+          const coarseDesc = GROUP_DESCRIPTIONS[coarse] || coarse
 
           return (
-            <div key={name} className="flex items-center gap-2">
-              <span className="text-xs text-gray-300 w-28 truncate" title={`${name} — ${fine}`}>
-                {name}
-                <span className="text-gray-600 ml-1 text-[10px]">({fine})</span>
-              </span>
-              <div className="flex-1 h-1.5 bg-gray-800 rounded">
-                <div
-                  className="h-full rounded"
-                  style={{ width: `${pct}%`, backgroundColor: color }}
-                />
+            <div key={name} className="group">
+              <div className="flex items-center gap-3">
+                <div className="w-36 shrink-0">
+                  <div className="text-xs font-medium text-gray-200">{fineDesc}</div>
+                  <div className="text-[10px] text-gray-500">{name} — {coarseDesc}</div>
+                </div>
+                <div className="flex-1 h-2 bg-gray-800 rounded-full">
+                  <div
+                    className="h-full rounded-full transition-all duration-200"
+                    style={{ width: `${pct}%`, backgroundColor: color }}
+                  />
+                </div>
+                <span className="text-[10px] text-gray-400 w-10 text-right font-mono">
+                  {(pct).toFixed(0)}%
+                </span>
               </div>
-              <span className="text-[10px] text-gray-500 w-8 text-right">{value.toFixed(2)}</span>
             </div>
           )
         })}
