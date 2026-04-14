@@ -63,7 +63,7 @@ def _free_extractor_model(extractor: ns.extractors.BaseExtractor) -> None:
 class Data(pydantic.BaseModel):
     """Handles configuration and creation of DataLoaders from dataset and extractors."""
 
-    model_config = pydantic.ConfigDict(extra="forbid")
+    model_config = pydantic.ConfigDict(extra="ignore")
 
     study: MultiStudyLoader
     # features
@@ -251,7 +251,7 @@ class Data(pydantic.BaseModel):
 class TribeExperiment(BaseExperiment):
     """Experiment configuration for TRIBE v2 inference."""
 
-    model_config = pydantic.ConfigDict(extra="forbid")
+    model_config = pydantic.ConfigDict(extra="ignore")
 
     data: Data
     seed: int | None = 33
