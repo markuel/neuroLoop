@@ -1,6 +1,6 @@
 import { useRef, useEffect, useMemo } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { OrbitControls } from '@react-three/drei'
+import { OrbitControls, GizmoHelper, GizmoViewcube } from '@react-three/drei'
 import * as THREE from 'three'
 import useStore from '../stores/useStore'
 import { activationsToColors } from '../utils/colorscale'
@@ -155,6 +155,16 @@ export default function BrainViewer() {
             TWO: THREE.TOUCH.DOLLY_PAN,
           }}
         />
+        <GizmoHelper alignment="bottom-right" margin={[70, 70]}>
+          <GizmoViewcube
+            faces={['R', 'L', 'A', 'P', 'S', 'I']}
+            color="#1f2937"
+            opacity={0.9}
+            strokeColor="#4b5563"
+            textColor="#f3f4f6"
+            hoverColor="#e94560"
+          />
+        </GizmoHelper>
       </Canvas>
     </div>
   )
