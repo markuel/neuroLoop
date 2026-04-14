@@ -215,7 +215,7 @@ class TribeModel(TribeExperiment):
         ]:
             config.pop(param)
         config["data.study.path"] = "."
-        config["data.study.names"] = "dummy"
+        config["data.study.names"] = "Study"
         config["average_subjects"] = True
         config["checkpoint_path"] = str(config["infra.folder"]) + f"/{checkpoint_name}"
         config["cache_folder"] = (
