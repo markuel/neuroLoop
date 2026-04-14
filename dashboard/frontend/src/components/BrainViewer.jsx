@@ -51,11 +51,30 @@ function BrainMesh() {
 export default function BrainViewer() {
   return (
     <div className="w-full h-full bg-gray-900 rounded-lg overflow-hidden">
-      <Canvas camera={{ position: [0, 0, 250], fov: 45 }}>
-        <ambientLight intensity={0.6} />
-        <directionalLight position={[100, 100, 100]} intensity={0.8} />
+      <Canvas camera={{ position: [-180, 30, 120], fov: 40, near: 1, far: 2000 }}>
+        <ambientLight intensity={0.7} />
+        <directionalLight position={[100, 150, 100]} intensity={0.6} />
+        <directionalLight position={[-100, -50, -100]} intensity={0.3} />
         <BrainMesh />
-        <OrbitControls enableDamping dampingFactor={0.1} />
+        <OrbitControls
+          enableDamping
+          dampingFactor={0.15}
+          rotateSpeed={0.8}
+          zoomSpeed={0.6}
+          panSpeed={0.5}
+          minDistance={100}
+          maxDistance={600}
+          target={[0, 0, 0]}
+          mouseButtons={{
+            LEFT: THREE.MOUSE.ROTATE,
+            MIDDLE: THREE.MOUSE.DOLLY,
+            RIGHT: THREE.MOUSE.PAN,
+          }}
+          touches={{
+            ONE: THREE.TOUCH.ROTATE,
+            TWO: THREE.TOUCH.DOLLY_PAN,
+          }}
+        />
       </Canvas>
     </div>
   )
