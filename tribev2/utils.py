@@ -39,7 +39,9 @@ class MultiStudyLoader(EventsBuilder):
             for name in self.studies_to_include:
                 if name not in self.names:
                     raise ValueError(f"Study {name} not found in {self.names}")
-        self.get_studies()  # run this so that studies are registered (in case _run is cached)
+        # Skip study registration in inference mode (path="." set by from_pretrained)
+        if str(self.path) != ".":
+            self.get_studies()
 
     @infra_timelines.apply(item_uid=str)
     def dummy(self, items: tp.Iterable[str]) -> tp.Iterator[None]:
