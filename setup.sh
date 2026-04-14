@@ -58,7 +58,7 @@ cd ../..
 # ------------------------------------------------------------------
 if [ -n "${HF_TOKEN:-}" ]; then
   echo "Logging in to HuggingFace..."
-  huggingface-cli login --token "$HF_TOKEN"
+  hf auth login --token "$HF_TOKEN"
 else
   echo "WARNING: HF_TOKEN not set — gated model downloads (Llama) will fail"
   echo "Set HF_TOKEN in .env and re-run setup.sh"
@@ -92,9 +92,9 @@ echo "  Backend:  http://0.0.0.0:8000"
 echo "  Frontend: http://localhost:5173"
 echo ""
 
-# Start backend in background
+# Start backend in background (use python directly from activated venv)
 cd dashboard/backend
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 cd ../..
 
