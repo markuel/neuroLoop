@@ -53,17 +53,14 @@ export default function RegionPanel() {
   const fineGroups = useStore((s) => s.fineGroups)
   const coarseGroups = useStore((s) => s.coarseGroups)
   const timestep = useStore((s) => s.timestep)
-  const globalVmin = useStore((s) => s.globalVmin)
   const globalVmax = useStore((s) => s.globalVmax)
   const isPlaying = useStore((s) => s.isPlaying)
   const selectedRegion = useStore((s) => s.selectedRegion)
   const setSelectedRegion = useStore((s) => s.setSelectedRegion)
 
-  // Use global scale so bars reflect absolute activation, not relative to top region
   const scaleMax = globalVmax || 1
 
-  // Throttle the sort to ~4 updates/sec during playback to avoid doing
-  // O(n log n) on 360 regions every single frame
+  // Throttle the sort to ~4 updates/sec during playback
   const [entries, setEntries] = useState([])
   useEffect(() => {
     if (!regions) { setEntries([]); return }
@@ -72,7 +69,6 @@ export default function RegionPanel() {
         Object.entries(regions)
           .map(([name, values]) => ({ name, value: values[timestep] ?? 0 }))
           .sort((a, b) => b.value - a.value)
-          .slice(0, 10)
       )
     }, isPlaying ? 250 : 0)
     return () => clearTimeout(id)
@@ -89,54 +85,74 @@ export default function RegionPanel() {
   const clickable = !isPlaying
 
   return (
-    <div className="h-full bg-gray-950 p-4 overflow-y-auto">
-      <div className="text-xs text-gray-500 font-semibold mb-3 flex items-center justify-between">
-        <span>BRAIN ACTIVITY <span className="text-gray-600 font-normal">@ t={timestep}s</span></span>
+    <div className="h-full bg-gray-950 flex flex-col overflow-hidden">
+      {/* Header */}
+      <div className="shrink-0 px-5 pt-3 pb-2 flex items-center justify-between border-b border-gray-800/50">
+        <span className="text-[11px] text-gray-400 font-semibold tracking-wide uppercase">
+          Region Activity
+        </span>
         {clickable && (
-          <span className="text-[10px] text-gray-600 font-normal">
-            {selectedRegion ? `Focused: ${selectedRegion}` : 'Click a region to focus'}
+          <span className="text-[10px] text-gray-600">
+            {selectedRegion ? `Focused: ${selectedRegion}` : 'Click to focus'}
           </span>
         )}
       </div>
-      <div className="flex flex-col gap-2">
-        {entries.map(({ name, value }) => {
-          const coarse = coarseGroups?.[name] || ''
-          const fine = fineGroups?.[name] || ''
-          const color = COARSE_COLORS[coarse] || '#6b7280'
-          const pct = Math.max(0, Math.min(100, (value / scaleMax) * 100))
-          const fineDesc = FINE_DESCRIPTIONS[fine] || fine
-          const coarseDesc = GROUP_DESCRIPTIONS[coarse] || coarse
-          const isSelected = selectedRegion === name
 
-          return (
-            <div
-              key={name}
-              onClick={() => {
-                if (!clickable) return
-                setSelectedRegion(isSelected ? null : name)
-              }}
-              className={`group rounded-md transition ${
-                clickable ? 'cursor-pointer hover:bg-gray-900 px-2 -mx-2 py-1 -my-1' : ''
-              } ${isSelected ? 'bg-gray-900 ring-1 ring-red-500/50' : ''}`}
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-36 shrink-0">
-                  <div className="text-xs font-medium text-gray-200">{fineDesc}</div>
-                  <div className="text-[10px] text-gray-500">{name} — {coarseDesc}</div>
-                </div>
-                <div className="flex-1 h-2 bg-gray-800 rounded-full">
-                  <div
-                    className="h-full rounded-full transition-all duration-200"
-                    style={{ width: `${pct}%`, backgroundColor: color }}
-                  />
-                </div>
-                <span className="text-[10px] text-gray-400 w-10 text-right font-mono">
-                  {(pct).toFixed(0)}%
+      {/* Two-column scrollable grid */}
+      <div className="flex-1 overflow-y-auto px-4 py-2">
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+          {entries.map(({ name, value }, i) => {
+            const coarse = coarseGroups?.[name] || ''
+            const fine = fineGroups?.[name] || ''
+            const color = COARSE_COLORS[coarse] || '#6b7280'
+            const pct = Math.max(0, Math.min(100, (value / scaleMax) * 100))
+            const fineDesc = FINE_DESCRIPTIONS[fine] || fine
+            const isSelected = selectedRegion === name
+
+            return (
+              <div
+                key={name}
+                onClick={() => {
+                  if (!clickable) return
+                  setSelectedRegion(isSelected ? null : name)
+                }}
+                className={`flex items-center gap-2 px-2 py-1.5 rounded transition-colors ${
+                  clickable ? 'cursor-pointer hover:bg-gray-800/60' : ''
+                } ${isSelected ? 'bg-gray-800 ring-1 ring-red-500/40' : ''}`}
+              >
+                {/* Rank number */}
+                <span className="text-[9px] text-gray-600 w-4 text-right font-mono shrink-0">
+                  {i + 1}
                 </span>
+
+                {/* Color dot */}
+                <span
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{ backgroundColor: color, opacity: Math.max(0.25, pct / 100) }}
+                />
+
+                {/* Label */}
+                <div className="flex-1 min-w-0">
+                  <div className="text-[11px] text-gray-200 truncate leading-tight">{fineDesc}</div>
+                  <div className="text-[9px] text-gray-500 truncate leading-tight">{name}</div>
+                </div>
+
+                {/* Bar + percentage */}
+                <div className="w-16 shrink-0 flex items-center gap-1.5">
+                  <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full"
+                      style={{ width: `${pct}%`, backgroundColor: color }}
+                    />
+                  </div>
+                  <span className="text-[9px] text-gray-500 font-mono w-7 text-right">
+                    {pct.toFixed(0)}%
+                  </span>
+                </div>
               </div>
-            </div>
-          )
-        })}
+            )
+          })}
+        </div>
       </div>
     </div>
   )

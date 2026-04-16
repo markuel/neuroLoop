@@ -75,50 +75,93 @@ function BrainMesh() {
   )
 }
 
+const CAMERA_DISTANCE = 200 // how far from the centroid the camera orbits
+
 function CameraFocus({ controlsRef }) {
   const mesh = useStore((s) => s.mesh)
   const selectedRegion = useStore((s) => s.selectedRegion)
   const regionVertices = useStore((s) => s.regionVertices)
-  const targetRef = useRef(new THREE.Vector3(0, 0, 0))
   const animRef = useRef(null)
   const { camera } = useThree()
 
-  // Compute centroid when selection changes
+  // Compute centroid + camera position when selection changes
   useEffect(() => {
     if (!selectedRegion || !mesh || !regionVertices?.[selectedRegion]) {
-      targetRef.current.set(0, 0, 0)
-      animRef.current = { start: performance.now(), from: null, to: new THREE.Vector3(0, 0, 0) }
+      // Deselected — animate back to default view
+      animRef.current = {
+        start: performance.now(),
+        fromTarget: null,
+        fromPos: null,
+        toTarget: new THREE.Vector3(0, 0, 0),
+        toPos: new THREE.Vector3(-180, -30, 100),
+      }
       return
     }
     const idxList = regionVertices[selectedRegion]
     const verts = mesh.vertices
-    let cx = 0, cy = 0, cz = 0
+    const nPerHemi = mesh.nVertices / 2 // fsaverage5: 10242 per hemisphere
+
+    // Split vertices into left (0..nPerHemi-1) and right (nPerHemi..end) groups
+    const leftIdxs = []
+    const rightIdxs = []
     for (const idx of idxList) {
-      cx += verts[idx * 3]
-      cy += verts[idx * 3 + 1]
-      cz += verts[idx * 3 + 2]
+      if (idx < nPerHemi) leftIdxs.push(idx)
+      else rightIdxs.push(idx)
     }
-    cx /= idxList.length
-    cy /= idxList.length
-    cz /= idxList.length
+
+    // Compute centroid for each hemisphere group
+    function centroidOf(idxs) {
+      let cx = 0, cy = 0, cz = 0
+      for (const idx of idxs) {
+        cx += verts[idx * 3]
+        cy += verts[idx * 3 + 1]
+        cz += verts[idx * 3 + 2]
+      }
+      return new THREE.Vector3(cx / idxs.length, cy / idxs.length, cz / idxs.length)
+    }
+
+    let centroid
+    if (leftIdxs.length > 0 && rightIdxs.length > 0) {
+      // Bilateral region — pick the hemisphere closer to the current camera
+      const leftC = centroidOf(leftIdxs)
+      const rightC = centroidOf(rightIdxs)
+      const camPos = camera.position
+      centroid = camPos.distanceToSquared(leftC) < camPos.distanceToSquared(rightC)
+        ? leftC : rightC
+    } else if (leftIdxs.length > 0) {
+      centroid = centroidOf(leftIdxs)
+    } else {
+      centroid = centroidOf(rightIdxs)
+    }
+
+    // Point camera from outside the brain looking inward at the region.
+    // Use the centroid's direction from brain origin as the outward normal —
+    // this works for both hemispheres (left regions point left, right point right).
+    const outward = centroid.clone().normalize()
+    const camPos = centroid.clone().addScaledVector(outward, CAMERA_DISTANCE)
+
     animRef.current = {
       start: performance.now(),
-      from: null,
-      to: new THREE.Vector3(cx, cy, cz),
+      fromTarget: null,
+      fromPos: null,
+      toTarget: centroid,
+      toPos: camPos,
     }
-  }, [selectedRegion, mesh, regionVertices])
+  }, [selectedRegion, mesh, regionVertices, camera])
 
-  // Smoothly animate camera target toward centroid
+  // Smoothly animate both camera position and orbit target
   useFrame(() => {
     const anim = animRef.current
     if (!anim || !controlsRef.current) return
-    if (!anim.from) {
-      anim.from = controlsRef.current.target.clone()
+    if (!anim.fromTarget) {
+      anim.fromTarget = controlsRef.current.target.clone()
+      anim.fromPos = camera.position.clone()
     }
     const elapsed = performance.now() - anim.start
     const t = Math.min(1, elapsed / 800) // 800ms ease
     const eased = 1 - Math.pow(1 - t, 3) // ease-out-cubic
-    controlsRef.current.target.lerpVectors(anim.from, anim.to, eased)
+    controlsRef.current.target.lerpVectors(anim.fromTarget, anim.toTarget, eased)
+    camera.position.lerpVectors(anim.fromPos, anim.toPos, eased)
     controlsRef.current.update()
     if (t >= 1) {
       animRef.current = null

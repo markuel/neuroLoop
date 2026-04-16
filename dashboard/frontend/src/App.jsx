@@ -161,7 +161,7 @@ export default function App() {
 
       <Timeline />
 
-      <div className="h-48 border-t border-gray-800">
+      <div className="h-72 border-t border-gray-800">
         <RegionPanel />
       </div>
     </div>
