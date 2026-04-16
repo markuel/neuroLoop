@@ -51,28 +51,6 @@ cp .env.example .env
 bash setup.sh
 ```
 
-### Storage modes
-
-**Local mode** (default, no AWS needed):
-```env
-STORAGE_MODE=local
-HF_TOKEN=your_token
-```
-Uploads and results are stored on the local filesystem in `./data/`. You can download results as a zip from the dashboard.
-
-**S3 mode** (persistent cloud storage):
-```env
-STORAGE_MODE=s3
-S3_BUCKET=neuroloop-data
-AWS_ACCESS_KEY_ID=...
-AWS_SECRET_ACCESS_KEY=...
-HF_TOKEN=your_token
-```
-Requires an S3 bucket with CORS enabled:
-```json
-[{"AllowedOrigins":["*"],"AllowedMethods":["GET","PUT"],"AllowedHeaders":["*"],"MaxAgeSeconds":3600}]
-```
-
 `setup.sh` handles everything automatically:
 
 1. Installs [uv](https://docs.astral.sh/uv/) (if not present)
