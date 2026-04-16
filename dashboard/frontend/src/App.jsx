@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import TopBar from './components/TopBar'
 import VideoPlayer from './components/VideoPlayer'
 import TextDisplay from './components/TextDisplay'
@@ -6,7 +6,7 @@ import BrainViewer from './components/BrainViewer'
 import Timeline from './components/Timeline'
 import RegionPanel from './components/RegionPanel'
 import useStore from './stores/useStore'
-import { getMesh, getResults } from './utils/api'
+import { getMesh, getAtlas, getResults } from './utils/api'
 
 export default function App() {
   const mesh = useStore((s) => s.mesh)
@@ -19,17 +19,21 @@ export default function App() {
   const setPredictions = useStore((s) => s.setPredictions)
   const setDuration = useStore((s) => s.setDuration)
   const isPlaying = useStore((s) => s.isPlaying)
+  const atlasRef = useRef(null)
 
-  // Load mesh on mount
+  // Load mesh + atlas on mount (binary mesh, JSON atlas — both cached)
   useEffect(() => {
     if (mesh) return
-    getMesh().then((data) => {
-      setMesh({
-        vertices: new Float32Array(data.vertices.flat()),
-        faces: new Uint32Array(data.faces.flat()),
-        nVertices: data.n_vertices,
+    Promise.all([getMesh(), getAtlas()])
+      .then(([meshData, atlasData]) => {
+        setMesh({
+          vertices: meshData.vertices,
+          faces: meshData.faces,
+          nVertices: meshData.nVertices,
+        })
+        atlasRef.current = atlasData
       })
-    }).catch((err) => console.error('Failed to load mesh:', err))
+      .catch((err) => console.error('Failed to load mesh/atlas:', err))
   }, [mesh, setMesh])
 
   // Poll job status
@@ -55,12 +59,14 @@ export default function App() {
             preds.push(predsRaw.subarray(t * nVerts, (t + 1) * nVerts))
           }
 
+          const atlas = atlasRef.current || {}
+
           setPredictions({
             preds,
             regions: regionsResp.regions,
-            fineGroups: regionsResp.fine_groups,
-            coarseGroups: regionsResp.coarse_groups,
-            regionVertices: regionsResp.region_vertices,
+            fineGroups: atlas.fine_groups ?? null,
+            coarseGroups: atlas.coarse_groups ?? null,
+            regionVertices: atlas.region_vertices ?? null,
             globalVmin: metaResp.global_vmin,
             globalVmax: metaResp.global_vmax,
             segmentTimes: metaResp.segment_times,
@@ -83,20 +89,26 @@ export default function App() {
     return () => clearInterval(interval)
   }, [jobId, jobStatus, setJob, setPredictions, setDuration])
 
-  // Play loop for text-only mode (video element drives time for video/audio)
+  // Play loop for text-only mode using rAF (video element drives time for video/audio)
   useEffect(() => {
     if (!isPlaying) return
     if (inputType === 'video' || inputType === 'audio') return
-    const interval = setInterval(() => {
+    let rafId
+    let last = performance.now()
+    function tick(now) {
+      const dt = (now - last) / 1000
+      last = now
       const { currentTime, duration, isPlaying } = useStore.getState()
       if (!isPlaying) return
       if (currentTime >= duration) {
         useStore.getState().setPlaying(false)
         return
       }
-      useStore.getState().setCurrentTime(currentTime + 0.1)
-    }, 100)
-    return () => clearInterval(interval)
+      useStore.getState().setCurrentTime(currentTime + dt)
+      rafId = requestAnimationFrame(tick)
+    }
+    rafId = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(rafId)
   }, [inputType, isPlaying])
 
   return (

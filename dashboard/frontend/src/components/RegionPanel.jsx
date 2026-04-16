@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import useStore from '../stores/useStore'
 
 const COARSE_COLORS = {
@@ -58,6 +59,25 @@ export default function RegionPanel() {
   const selectedRegion = useStore((s) => s.selectedRegion)
   const setSelectedRegion = useStore((s) => s.setSelectedRegion)
 
+  // Use global scale so bars reflect absolute activation, not relative to top region
+  const scaleMax = globalVmax || 1
+
+  // Throttle the sort to ~4 updates/sec during playback to avoid doing
+  // O(n log n) on 360 regions every single frame
+  const [entries, setEntries] = useState([])
+  useEffect(() => {
+    if (!regions) { setEntries([]); return }
+    const id = setTimeout(() => {
+      setEntries(
+        Object.entries(regions)
+          .map(([name, values]) => ({ name, value: values[timestep] ?? 0 }))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 10)
+      )
+    }, isPlaying ? 250 : 0)
+    return () => clearTimeout(id)
+  }, [regions, timestep, isPlaying])
+
   if (!regions) {
     return (
       <div className="h-full bg-gray-950 p-4 flex items-center justify-center text-gray-600 text-sm">
@@ -65,14 +85,6 @@ export default function RegionPanel() {
       </div>
     )
   }
-
-  // Use global scale so bars reflect absolute activation, not relative to top region
-  const scaleMax = globalVmax || 1
-
-  const entries = Object.entries(regions)
-    .map(([name, values]) => ({ name, value: values[timestep] ?? 0 }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 10)
 
   const clickable = !isPlaying
 

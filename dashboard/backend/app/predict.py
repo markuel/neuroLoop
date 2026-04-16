@@ -83,23 +83,6 @@ def _run_prediction(job_id: str) -> None:
             region_df = atlas.all_region_timeseries(preds)
             regions_dict = {col: region_df[col].tolist() for col in region_df.columns}
 
-            # Build region -> vertex indices mapping (for frontend highlighting)
-            region_vertices = {
-                name: [int(v) for v in verts]
-                for name, verts in atlas.labels.items()
-            }
-
-            # Build group lookup for frontend (region_name -> fine group name)
-            from neuroLoop.regions import FINE_GROUPS, COARSE_GROUPS
-            region_to_fine = {}
-            for group, members in FINE_GROUPS.items():
-                for r in members:
-                    region_to_fine[r] = group
-            region_to_coarse = {}
-            for group, members in COARSE_GROUPS.items():
-                for r in members:
-                    region_to_coarse[r] = group
-
             # Extract segment timestamps for temporal alignment
             segment_times = [
                 {"start": float(s.start), "duration": float(s.duration)}
@@ -110,7 +93,7 @@ def _run_prediction(job_id: str) -> None:
                 if segment_times else 0.0
             )
 
-            # Save results to S3
+            # Save results to storage
             prefix = f"results/{job_id}"
 
             # preds as raw float32 binary (no numpy header to parse)
@@ -121,16 +104,12 @@ def _run_prediction(job_id: str) -> None:
                 content_type="application/octet-stream",
             )
 
-            # Compute global min/max for consistent colorscale
-            global_vmin = float(np.percentile(preds, 1))
-            global_vmax = float(np.percentile(preds, 99))
+            # Compute global min/max in one pass
+            global_vmin, global_vmax = np.percentile(preds, [1, 99]).tolist()
 
-            # regions + group lookup as JSON
+            # regions timeseries as JSON (static atlas data served separately via /api/atlas)
             regions_payload = {
                 "regions": regions_dict,
-                "fine_groups": region_to_fine,
-                "coarse_groups": region_to_coarse,
-                "region_vertices": region_vertices,
             }
             storage.upload_bytes(
                 json.dumps(regions_payload).encode(),
@@ -179,3 +158,36 @@ def _get_model():
         from tribev2 import TribeModel
         _model_cache = TribeModel.from_pretrained("facebook/tribev2", cache_folder="./cache")
     return _model_cache
+
+
+_atlas_cache = None
+
+def get_atlas_data() -> dict:
+    """Static atlas data (region vertices + group lookups). Cached after first call."""
+    global _atlas_cache
+    if _atlas_cache is not None:
+        return _atlas_cache
+
+    from neuroLoop import BrainAtlas
+    from neuroLoop.regions import FINE_GROUPS, COARSE_GROUPS
+
+    atlas = BrainAtlas()
+    region_vertices = {
+        name: [int(v) for v in verts]
+        for name, verts in atlas.labels.items()
+    }
+    region_to_fine = {}
+    for group, members in FINE_GROUPS.items():
+        for r in members:
+            region_to_fine[r] = group
+    region_to_coarse = {}
+    for group, members in COARSE_GROUPS.items():
+        for r in members:
+            region_to_coarse[r] = group
+
+    _atlas_cache = {
+        "region_vertices": region_vertices,
+        "fine_groups": region_to_fine,
+        "coarse_groups": region_to_coarse,
+    }
+    return _atlas_cache

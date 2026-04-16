@@ -3,17 +3,13 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, GizmoHelper, GizmoViewcube } from '@react-three/drei'
 import * as THREE from 'three'
 import useStore from '../stores/useStore'
-import { activationsToColors } from '../utils/colorscale'
+import { activationsToColors, BRAIN_GRAY_R, BRAIN_GRAY_G, BRAIN_GRAY_B } from '../utils/colorscale'
 
 function BrainMesh() {
   const meshRef = useRef()
   const mesh = useStore((s) => s.mesh)
   const preds = useStore((s) => s.preds)
-  const timestep = useStore((s) => s.timestep)
-  const globalVmin = useStore((s) => s.globalVmin)
-  const globalVmax = useStore((s) => s.globalVmax)
-  const selectedRegion = useStore((s) => s.selectedRegion)
-  const regionVertices = useStore((s) => s.regionVertices)
+  const colorsRef = useRef(null)
 
   const geometry = useMemo(() => {
     if (!mesh) return null
@@ -21,22 +17,29 @@ function BrainMesh() {
     geo.setAttribute('position', new THREE.Float32BufferAttribute(mesh.vertices, 3))
     geo.setIndex(new THREE.BufferAttribute(mesh.faces, 1))
     geo.computeVertexNormals()
+    // Preallocate color buffer once — reused every frame
     const colors = new Float32Array(mesh.nVertices * 3)
     for (let i = 0; i < mesh.nVertices; i++) {
-      colors[i * 3] = 0.42
-      colors[i * 3 + 1] = 0.42
-      colors[i * 3 + 2] = 0.42
+      colors[i * 3] = BRAIN_GRAY_R
+      colors[i * 3 + 1] = BRAIN_GRAY_G
+      colors[i * 3 + 2] = BRAIN_GRAY_B
     }
+    colorsRef.current = colors
     geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
     return geo
   }, [mesh])
 
-  useEffect(() => {
-    if (!geometry || !preds || !preds[timestep]) return
+  // Update colors in the render loop — bypasses React re-renders entirely
+  useFrame(() => {
+    if (!geometry || !colorsRef.current || !preds) return
+    const { timestep, globalVmin, globalVmax, selectedRegion, regionVertices } = useStore.getState()
     const activations = preds[timestep]
-    const colors = activationsToColors(activations, globalVmin, globalVmax)
+    if (!activations) return
 
-    // Highlight selected region: make its vertices bright cyan outline
+    const colors = colorsRef.current
+    activationsToColors(activations, globalVmin, globalVmax, colors)
+
+    // Highlight selected region: make its vertices bright cyan
     if (selectedRegion && regionVertices && regionVertices[selectedRegion]) {
       const idxList = regionVertices[selectedRegion]
       for (const idx of idxList) {
@@ -46,15 +49,14 @@ function BrainMesh() {
       }
     }
 
-    geometry.attributes.color.array.set(colors)
     geometry.attributes.color.needsUpdate = true
-  }, [geometry, preds, timestep, globalVmin, globalVmax, selectedRegion, regionVertices])
+  })
 
   if (!geometry) return null
 
   return (
     <mesh ref={meshRef} geometry={geometry}>
-      <meshStandardMaterial vertexColors side={THREE.DoubleSide} />
+      <meshStandardMaterial vertexColors />
     </mesh>
   )
 }

@@ -39,6 +39,9 @@ class BrainAtlas:
         self.mesh = mesh
         self.hemi = hemi
         self._labels: dict[str, np.ndarray] | None = None
+        self._v2r: dict[int, str] | None = None
+        self._indicator: np.ndarray | None = None
+        self._indicator_names: list[str] | None = None
 
     @property
     def labels(self) -> dict[str, np.ndarray]:
@@ -49,6 +52,37 @@ class BrainAtlas:
                 mesh=self.mesh, combine=False, hemi=self.hemi
             )
         return self._labels
+
+    @property
+    def vertex_to_region(self) -> dict[int, str]:
+        """Cached reverse lookup: vertex index -> region name. Built once."""
+        if not hasattr(self, '_v2r') or self._v2r is None:
+            self._v2r = {}
+            for name, idxs in self.labels.items():
+                for i in idxs:
+                    self._v2r[int(i)] = name
+        return self._v2r
+
+    @property
+    def _indicator_matrix(self) -> tuple[np.ndarray, list[str]]:
+        """Cached (n_vertices, n_regions) indicator matrix for fast matmul.
+
+        Each column has 1/count at the vertex positions for that region,
+        so preds @ indicator = region means.
+        """
+        if not hasattr(self, '_indicator') or self._indicator is None:
+            labels = self.labels
+            region_names = list(labels.keys())
+            # Infer n_vertices from the max vertex index
+            max_idx = max(int(idx.max()) for idx in labels.values() if len(idx) > 0)
+            n_verts = max_idx + 1
+            indicator = np.zeros((n_verts, len(region_names)), dtype=np.float32)
+            for i, (name, idxs) in enumerate(labels.items()):
+                if len(idxs) > 0:
+                    indicator[idxs, i] = 1.0 / len(idxs)
+            self._indicator = indicator
+            self._indicator_names = region_names
+        return self._indicator, self._indicator_names
 
     # ------------------------------------------------------------------
     # Region queries
@@ -101,15 +135,17 @@ class BrainAtlas:
             Exact region name (e.g. ``"V1"``) or wildcard pattern
             (e.g. ``"V*"`` for all visual areas starting with V).
         """
+        # Fast path: exact match from cached labels (avoids re-reading annotations)
+        if '*' not in region and '?' not in region:
+            labels = self.labels
+            if region in labels:
+                return labels[region]
         from tribev2.utils import get_hcp_roi_indices
         return get_hcp_roi_indices(region, hemi=self.hemi, mesh=self.mesh)
 
     def region_for_vertex(self, vertex_idx: int) -> str | None:
         """Return the region name that owns a given vertex index, or None."""
-        for name, vertices in self.labels.items():
-            if vertex_idx in vertices:
-                return name
-        return None
+        return self.vertex_to_region.get(vertex_idx)
 
     # ------------------------------------------------------------------
     # Time-series extraction
@@ -150,11 +186,10 @@ class BrainAtlas:
             Rows = timesteps, columns = region names.
         """
         preds = _validate_preds(preds)
-        labels = self.labels
-        data = np.column_stack(
-            [preds[:, idx].mean(axis=1) for idx in labels.values()]
-        )
-        return pd.DataFrame(data, columns=list(labels.keys()))
+        indicator, region_names = self._indicator_matrix
+        # Single matmul: (n_timesteps, n_vertices) @ (n_vertices, n_regions)
+        data = preds @ indicator
+        return pd.DataFrame(data, columns=region_names)
 
     def group_timeseries(
         self, preds: np.ndarray, group: str, level: str = "coarse"

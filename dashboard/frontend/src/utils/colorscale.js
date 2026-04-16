@@ -1,17 +1,7 @@
-/**
- * "Fire" colorscale matching the notebook's cmap="fire".
- * Maps 0–1 to black → red → orange → yellow → white.
- */
-function fireColor(t) {
-  t = Math.max(0, Math.min(1, t))
-  const r = Math.min(1, t * 2)
-  const g = Math.max(0, Math.min(1, (t - 0.35) * 2.5))
-  const b = Math.max(0, Math.min(1, (t - 0.7) * 3.33))
-  return [r, g, b]
-}
-
 // Gray brain surface color (matches sulcal background)
-const BRAIN_GRAY = [0.42, 0.42, 0.42]
+export const BRAIN_GRAY_R = 0.42
+export const BRAIN_GRAY_G = 0.42
+export const BRAIN_GRAY_B = 0.42
 
 /**
  * Build vertex colors matching the notebook's rendering approach:
@@ -30,35 +20,41 @@ const BRAIN_GRAY = [0.42, 0.42, 0.42]
  * Since WebGL vertex colors don't support true transparency on a single mesh,
  * we blend the fire color with gray proportionally.
  *
+ * Writes directly into the provided output buffer to avoid per-frame allocations.
+ *
  * @param {Float32Array} activations - raw activation values per vertex
  * @param {number} vmin - 1st percentile (maps to 0)
  * @param {number} vmax - 99th percentile (maps to 1)
+ * @param {Float32Array} out - preallocated RGB output buffer, length n_vertices * 3
  * @param {number} threshold - normalized cutoff below which vertices are gray (default 0.6)
  * @param {number} fadeWidth - range over which alpha ramps from 0→1 above threshold (default 0.2)
- * @returns {Float32Array} - RGB colors, length n_vertices * 3
  */
-export function activationsToColors(activations, vmin, vmax, threshold = 0.6, fadeWidth = 0.2) {
+export function activationsToColors(activations, vmin, vmax, out, threshold = 0.6, fadeWidth = 0.2) {
   const n = activations.length
-  const colors = new Float32Array(n * 3)
   const range = vmax - vmin || 1
 
   for (let i = 0; i < n; i++) {
-    // Step 1: normalize to 0–1 and clip
+    // Normalize to 0–1 and clip
     const t = Math.max(0, Math.min(1, (activations[i] - vmin) / range))
+    const j = i * 3
 
     if (t < threshold) {
       // Below threshold: gray brain surface
-      colors[i * 3] = BRAIN_GRAY[0]
-      colors[i * 3 + 1] = BRAIN_GRAY[1]
-      colors[i * 3 + 2] = BRAIN_GRAY[2]
+      out[j] = BRAIN_GRAY_R
+      out[j + 1] = BRAIN_GRAY_G
+      out[j + 2] = BRAIN_GRAY_B
     } else {
-      // Above threshold: blend fire color with gray based on alpha ramp
+      // Fire colorscale (inlined to avoid per-vertex array allocation)
+      const fr = Math.min(1, t * 2)
+      const fg = Math.max(0, Math.min(1, (t - 0.35) * 2.5))
+      const fb = Math.max(0, Math.min(1, (t - 0.7) * 3.33))
+
+      // Blend fire color with gray based on alpha ramp
       const alpha = Math.min(1, (t - threshold) / fadeWidth)
-      const [fr, fg, fb] = fireColor(t)
-      colors[i * 3] = BRAIN_GRAY[0] * (1 - alpha) + fr * alpha
-      colors[i * 3 + 1] = BRAIN_GRAY[1] * (1 - alpha) + fg * alpha
-      colors[i * 3 + 2] = BRAIN_GRAY[2] * (1 - alpha) + fb * alpha
+      const invAlpha = 1 - alpha
+      out[j] = BRAIN_GRAY_R * invAlpha + fr * alpha
+      out[j + 1] = BRAIN_GRAY_G * invAlpha + fg * alpha
+      out[j + 2] = BRAIN_GRAY_B * invAlpha + fb * alpha
     }
   }
-  return colors
 }

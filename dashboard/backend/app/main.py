@@ -1,7 +1,7 @@
 # dashboard/backend/app/main.py
 from fastapi import FastAPI, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from .storage import (
@@ -11,8 +11,8 @@ from .storage import (
     get_local_file_path,
     LOCAL_DATA_DIR,
 )
-from .mesh import get_fsaverage5_mesh
-from .predict import start_prediction, get_job, list_jobs
+from .mesh import get_fsaverage5_mesh_binary
+from .predict import start_prediction, get_job, list_jobs, get_atlas_data
 
 app = FastAPI(title="neuroLoop API")
 app.add_middleware(
@@ -20,6 +20,7 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-N-Vertices", "X-N-Faces"],
 )
 
 
@@ -124,7 +125,21 @@ def health():
 
 @app.get("/api/mesh")
 def mesh():
-    return get_fsaverage5_mesh()
+    buf, n_vertices, n_faces = get_fsaverage5_mesh_binary()
+    return Response(
+        content=buf,
+        media_type="application/octet-stream",
+        headers={
+            "X-N-Vertices": str(n_vertices),
+            "X-N-Faces": str(n_faces),
+        },
+    )
+
+
+@app.get("/api/atlas")
+def atlas():
+    """Static region data (vertex indices, group lookups). Cached client-side."""
+    return get_atlas_data()
 
 
 class PredictRequest(BaseModel):
