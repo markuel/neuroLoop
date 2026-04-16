@@ -5,7 +5,8 @@ const useStore = create((set, get) => ({
   currentTime: 0,        // seconds (float) — wall-clock time in the stimulus
   duration: 0,           // total duration in seconds
   isPlaying: false,
-  timestep: 0,           // integer index into predictions array
+  timestep: 0,           // integer index into predictions array (floor of exact)
+  timestepFrac: 0,       // 0–1 fractional position between timestep and timestep+1
 
   // Segment-based time mapping
   segmentTimes: null,    // array of { start, duration } from backend
@@ -18,7 +19,8 @@ const useStore = create((set, get) => ({
     // Account for hemodynamic lag: brain at time T reflects stimulus at T - lag
     const brainTime = clamped + hemodynamicLag
     let step = 0
-    if (segmentTimes) {
+    let frac = 0
+    if (segmentTimes && segmentTimes.length > 0) {
       // Find the segment whose start time is closest to brainTime
       for (let i = 0; i < segmentTimes.length; i++) {
         if (segmentTimes[i].start <= brainTime) {
@@ -27,12 +29,24 @@ const useStore = create((set, get) => ({
           break
         }
       }
+      // Compute fractional position within the current segment interval
+      if (step < segmentTimes.length - 1) {
+        const curStart = segmentTimes[step].start
+        const nextStart = segmentTimes[step + 1].start
+        const gap = nextStart - curStart
+        if (gap > 0) {
+          frac = Math.max(0, Math.min(1, (brainTime - curStart) / gap))
+        }
+      }
     } else {
-      // Fallback: linear mapping
+      // Fallback: linear mapping (fractional)
       const { preds } = get()
-      step = preds ? Math.min(Math.floor(clamped), preds.length - 1) : 0
+      const maxStep = preds ? preds.length - 1 : 0
+      const exact = preds ? Math.min(clamped, maxStep) : 0
+      step = Math.floor(exact)
+      frac = exact - step
     }
-    set({ currentTime: clamped, timestep: Math.max(0, step) })
+    set({ currentTime: clamped, timestep: Math.max(0, step), timestepFrac: frac })
   },
   setDuration: (d) => set({ duration: d }),
   setPlaying: (p) => set((s) => ({
@@ -85,7 +99,7 @@ const useStore = create((set, get) => ({
 
   // Reset for new prediction
   reset: () => set({
-    currentTime: 0, duration: 0, isPlaying: false, timestep: 0,
+    currentTime: 0, duration: 0, isPlaying: false, timestep: 0, timestepFrac: 0,
     preds: null, regions: null, fineGroups: null, coarseGroups: null,
     regionVertices: null, selectedRegion: null,
     globalVmin: 0, globalVmax: 1, segmentTimes: null, hemodynamicLag: 5.0,

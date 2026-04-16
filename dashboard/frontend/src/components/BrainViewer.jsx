@@ -10,6 +10,7 @@ function BrainMesh() {
   const mesh = useStore((s) => s.mesh)
   const preds = useStore((s) => s.preds)
   const colorsRef = useRef(null)
+  const lerpBufRef = useRef(null) // preallocated buffer for interpolated activations
 
   const geometry = useMemo(() => {
     if (!mesh) return null
@@ -25,6 +26,7 @@ function BrainMesh() {
       colors[i * 3 + 2] = BRAIN_GRAY_B
     }
     colorsRef.current = colors
+    lerpBufRef.current = new Float32Array(mesh.nVertices)
     geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
     return geo
   }, [mesh])
@@ -32,12 +34,24 @@ function BrainMesh() {
   // Update colors in the render loop — bypasses React re-renders entirely
   useFrame(() => {
     if (!geometry || !colorsRef.current || !preds) return
-    const { timestep, globalVmin, globalVmax, selectedRegion, regionVertices } = useStore.getState()
-    const activations = preds[timestep]
-    if (!activations) return
+    const { timestep, timestepFrac, globalVmin, globalVmax, selectedRegion, regionVertices } = useStore.getState()
+    const frameA = preds[timestep]
+    if (!frameA) return
 
     const colors = colorsRef.current
-    activationsToColors(activations, globalVmin, globalVmax, colors)
+    const frameB = preds[timestep + 1]
+
+    // Interpolate between adjacent timesteps for smooth transitions
+    if (timestepFrac > 0 && frameB) {
+      const buf = lerpBufRef.current
+      const invFrac = 1 - timestepFrac
+      for (let i = 0, n = frameA.length; i < n; i++) {
+        buf[i] = frameA[i] * invFrac + frameB[i] * timestepFrac
+      }
+      activationsToColors(buf, globalVmin, globalVmax, colors)
+    } else {
+      activationsToColors(frameA, globalVmin, globalVmax, colors)
+    }
 
     // Highlight selected region: make its vertices bright cyan
     if (selectedRegion && regionVertices && regionVertices[selectedRegion]) {
