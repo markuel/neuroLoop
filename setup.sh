@@ -76,10 +76,20 @@ print('Model downloaded to ./cache/')
 "
 
 # ------------------------------------------------------------------
-# 6. Pre-fetch fsaverage5 mesh (small, avoids delay on first request)
+# 6. Bundle mesh + atlas data (if not already committed)
 # ------------------------------------------------------------------
-echo "Downloading fsaverage5 mesh..."
-python -c "from nilearn.datasets import fetch_surf_fsaverage; fetch_surf_fsaverage('fsaverage5')"
+if [ ! -f dashboard/backend/data/fsaverage5_mesh.npz ] || [ ! -f dashboard/backend/data/hcp_atlas.npz ]; then
+  echo "Generating bundled mesh + atlas data..."
+  python scripts/bundle_mesh.py
+else
+  echo "Bundled data found, skipping generation."
+fi
+
+# Pre-fetch fsaverage5 into nilearn's cache — TRIBE's internal feature
+# extraction still uses nilearn at runtime (utils_fmri.py). This is a
+# small (~10MB) download cached in ~/.nilearn_data/.
+echo "Pre-caching fsaverage5 for TRIBE..."
+python -c "from nilearn.datasets import fetch_surf_fsaverage; fetch_surf_fsaverage('fsaverage5')" 2>/dev/null || echo "  (nilearn pre-fetch failed, will retry at runtime)"
 
 # ------------------------------------------------------------------
 # 7. Start both servers

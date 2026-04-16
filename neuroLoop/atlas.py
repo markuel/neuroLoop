@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import typing as tp
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from .regions import COARSE_GROUPS, FINE_GROUPS
+
+# Bundled atlas file — generated once by scripts/bundle_mesh.py
+_ATLAS_PATH = Path(__file__).resolve().parent.parent / "dashboard" / "backend" / "data" / "hcp_atlas.npz"
 
 
 class BrainAtlas:
@@ -47,10 +51,15 @@ class BrainAtlas:
     def labels(self) -> dict[str, np.ndarray]:
         """Cached region-name -> vertex-indices mapping."""
         if self._labels is None:
-            from tribev2.utils import get_hcp_labels
-            self._labels = get_hcp_labels(
-                mesh=self.mesh, combine=False, hemi=self.hemi
-            )
+            # Try bundled atlas first (no network, no MNE sample data download)
+            if self.mesh == "fsaverage5" and self.hemi == "both" and _ATLAS_PATH.exists():
+                data = np.load(_ATLAS_PATH)
+                self._labels = {name: data[name] for name in data.files}
+            else:
+                from tribev2.utils import get_hcp_labels
+                self._labels = get_hcp_labels(
+                    mesh=self.mesh, combine=False, hemi=self.hemi
+                )
         return self._labels
 
     @property

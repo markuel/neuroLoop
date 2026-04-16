@@ -1,8 +1,10 @@
 # dashboard/backend/app/mesh.py
 import numpy as np
-import nibabel as nib
 from functools import lru_cache
-from nilearn.datasets import fetch_surf_fsaverage
+from pathlib import Path
+
+# Bundled mesh file — generated once by scripts/bundle_mesh.py, committed to repo
+_MESH_PATH = Path(__file__).resolve().parent.parent / "data" / "fsaverage5_mesh.npz"
 
 
 @lru_cache
@@ -12,22 +14,13 @@ def get_fsaverage5_mesh() -> tuple[np.ndarray, np.ndarray]:
     Returns (vertices, faces) where vertices is (N, 3) float32
     and faces is (F, 3) uint32.
     """
-    fs = fetch_surf_fsaverage("fsaverage5")
-
-    vertices_list = []
-    faces_list = []
-    offset = 0
-    for hemi in ("left", "right"):
-        coords, faces_arr = nib.load(fs[f"pial_{hemi}"]).darrays
-        coords = coords.data
-        faces_arr = faces_arr.data
-        vertices_list.append(coords)
-        faces_list.append(faces_arr + offset)
-        offset += len(coords)
-
-    vertices = np.concatenate(vertices_list, axis=0).astype(np.float32)
-    faces = np.concatenate(faces_list, axis=0).astype(np.uint32)
-    return vertices, faces
+    if not _MESH_PATH.exists():
+        raise FileNotFoundError(
+            f"Bundled mesh not found at {_MESH_PATH}. "
+            f"Run: python scripts/bundle_mesh.py"
+        )
+    data = np.load(_MESH_PATH)
+    return data["vertices"], data["faces"]
 
 
 @lru_cache
