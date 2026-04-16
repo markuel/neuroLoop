@@ -8,9 +8,9 @@ import { activationsToColors, BRAIN_GRAY_R, BRAIN_GRAY_G, BRAIN_GRAY_B } from '.
 function BrainMesh() {
   const meshRef = useRef()
   const mesh = useStore((s) => s.mesh)
-  const preds = useStore((s) => s.preds)
   const colorsRef = useRef(null)
   const lerpBufRef = useRef(null) // preallocated buffer for interpolated activations
+  const geoRef = useRef(null)
 
   const geometry = useMemo(() => {
     if (!mesh) return null
@@ -28,13 +28,16 @@ function BrainMesh() {
     colorsRef.current = colors
     lerpBufRef.current = new Float32Array(mesh.nVertices)
     geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
+    geoRef.current = geo
     return geo
   }, [mesh])
 
-  // Update colors in the render loop — bypasses React re-renders entirely
+  // Update colors in the render loop — reads ALL state from store to avoid stale closures
   useFrame(() => {
-    if (!geometry || !colorsRef.current || !preds) return
-    const { timestep, timestepFrac, globalVmin, globalVmax, selectedRegion, regionVertices } = useStore.getState()
+    const geo = geoRef.current
+    if (!geo || !colorsRef.current) return
+    const { preds, timestep, timestepFrac, globalVmin, globalVmax, selectedRegion, regionVertices } = useStore.getState()
+    if (!preds) return
     const frameA = preds[timestep]
     if (!frameA) return
 
@@ -63,7 +66,7 @@ function BrainMesh() {
       }
     }
 
-    geometry.attributes.color.needsUpdate = true
+    geo.attributes.color.needsUpdate = true
   })
 
   if (!geometry) return null
