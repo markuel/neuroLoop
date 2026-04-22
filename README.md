@@ -31,7 +31,7 @@ TRIBE v2 requires a CUDA-capable GPU. [Lambda Cloud](https://lambdalabs.com/serv
 
 Once you're SSH'd into the instance, continue with setup below.
 
-## Setup
+## Instance Setup
 
 ```bash
 # Clone and enter the repo
@@ -40,7 +40,8 @@ cd neuroLoop
 
 # Configure
 cp .env.example .env
-# Edit .env — at minimum set HF_TOKEN:
+nano .env
+# add tour hugging face token with access to Llama
 #   HF_TOKEN=your_huggingface_token
 
 # Run setup (installs everything + starts servers)
