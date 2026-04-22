@@ -24,9 +24,9 @@ TRIBE v2 requires a CUDA-capable GPU. [Lambda Cloud](https://lambdalabs.com/serv
 3. Pick any GPU type (a single A10 or A100 works fine)
 4. Add your SSH key (or create one in the Lambda dashboard under **SSH Keys**)
 5. Launch the instance and wait for it to show **Running** under status
-6. Copy the SSH command from the dashboard and open the terminal to connect:
+6. Copy the lambda IP address from the dashboard and open the terminal to connect:
    ```bash
-   ssh ubuntu@<instance-ip>
+   ssh -L 5173:localhost:5173 -L 8000:localhost:8000 -i ~/.ssh/<your_SSH_key.pem ubuntu@<your_lambda_instance_ip_address>
    ```
 
 Once you're SSH'd into the instance, continue with setup below.
@@ -49,14 +49,6 @@ bash setup.sh
 ```
 
 `setup.sh` handles everything automatically:
-
-1. Installs [uv](https://docs.astral.sh/uv/) (if not present)
-2. Creates a Python 3.11 venv and installs all dependencies via `uv pip`
-3. Installs Node.js (if not present) and frontend dependencies
-4. Logs in to HuggingFace for gated model access
-5. Pre-downloads the TRIBE v2 model checkpoint (~1GB)
-6. Pre-fetches the fsaverage5 cortical mesh
-7. Starts the backend (port 8000) and frontend (port 5173)
 
 Once running, open **http://localhost:5173** in your browser.
 
