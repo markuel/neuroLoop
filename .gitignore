@@ -39,3 +39,9 @@ wandb/
 
 # Local storage mode data
 data/
+
+# claude
+.claude/
+
+# playwright
+.playwright-mcp/
