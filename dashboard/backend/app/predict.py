@@ -57,6 +57,40 @@ def load_manifest() -> None:
             _jobs[job_id] = {**entry, "status": "done", "progress": 1.0}
     logger.info("Loaded %d jobs from manifest", len(entries))
 
+
+# ------------------------------------------------------------------
+# Thumbnail extraction
+# ------------------------------------------------------------------
+
+def _extract_thumbnail(local_path: str, job_id: str, input_type: str) -> str | None:
+    """Extract a JPEG thumbnail from a video file and upload to storage.
+
+    Returns the storage key on success, None for non-video inputs or on failure.
+    """
+    if input_type != "video":
+        return None
+    try:
+        import subprocess
+        with tempfile.TemporaryDirectory() as thumb_dir:
+            thumb_path = str(Path(thumb_dir) / "thumbnail.jpg")
+            result = subprocess.run(
+                [
+                    "ffmpeg", "-ss", "1", "-i", local_path,
+                    "-vframes", "1", "-q:v", "4", "-y", thumb_path,
+                ],
+                capture_output=True,
+                timeout=30,
+            )
+            if result.returncode != 0 or not Path(thumb_path).exists():
+                logger.warning("ffmpeg thumbnail failed for %s: %s", job_id, result.stderr.decode())
+                return None
+            key = f"results/{job_id}/thumbnail.jpg"
+            storage.upload_bytes(Path(thumb_path).read_bytes(), key, "image/jpeg")
+            return key
+    except Exception as exc:
+        logger.warning("Thumbnail extraction skipped for %s: %s", job_id, exc)
+        return None
+
 def get_job(job_id: str) -> dict | None:
     return _jobs.get(job_id)
 
@@ -68,14 +102,16 @@ def list_jobs() -> list[dict]:
             "timestamp": j["timestamp"],
             "status": j["status"],
             "n_timesteps": j.get("n_timesteps"),
+            "thumbnail_url": (
+                storage.presigned_download_url(j["thumbnail_key"])
+                if j.get("thumbnail_key") else None
+            ),
         }
         for j in sorted(_jobs.values(), key=lambda x: x["timestamp"], reverse=True)
     ]
 
 def start_prediction(s3_key: str, input_type: str) -> str:
     """Start a prediction job in background. Returns job_id."""
-    import threading
-
     job_id = f"job_{uuid.uuid4().hex[:8]}"
     filename = s3_key.split("/")[-1]
     _jobs[job_id] = {
@@ -174,7 +210,10 @@ def _run_prediction(job_id: str) -> None:
             }
             meta_bytes = json.dumps(meta).encode()
 
-            # Upload all three files in parallel (significant for S3 mode)
+            # Extract thumbnail while local file is still available
+            thumbnail_key = _extract_thumbnail(local_path, job_id, input_type)
+
+            # Upload all result files in parallel (significant for S3 mode)
             from concurrent.futures import ThreadPoolExecutor
             with ThreadPoolExecutor(max_workers=3) as pool:
                 pool.submit(storage.upload_bytes, preds_bytes, f"{prefix}/preds.bin", "application/octet-stream")
@@ -186,6 +225,7 @@ def _run_prediction(job_id: str) -> None:
             job["status"] = "done"
             job["progress"] = 1.0
             job["results_prefix"] = prefix
+            job["thumbnail_key"] = thumbnail_key
 
             _append_to_manifest({
                 "job_id": job_id,
@@ -195,6 +235,7 @@ def _run_prediction(job_id: str) -> None:
                 "results_prefix": prefix,
                 "n_timesteps": meta["n_timesteps"],
                 "duration_seconds": duration_seconds,
+                "thumbnail_key": thumbnail_key,
             })
 
     except Exception as e:
