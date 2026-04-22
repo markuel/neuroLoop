@@ -26,7 +26,7 @@ TRIBE v2 requires a CUDA-capable GPU. [Lambda Cloud](https://cloud.lambda.ai) is
 5. Launch the instance and wait for it to show **Running** under status
 6. Copy the lambda IP address from the dashboard and open the terminal to connect:
    ```bash
-   ssh -L 5173:localhost:5173 -L 8000:localhost:8000 -i ~/.ssh/<your_SSH_key.pem ubuntu@<your_lambda_instance_ip_address>
+   ssh -L 5173:localhost:5173 -L 8000:localhost:8000 -i ~/.ssh/<YOUR_SSH_KEY>.pem ubuntu@<YOUR_LAMBDA_INSTANCE_IP>
    ```
 
 Once you're SSH'd into the instance, continue with setup below.
