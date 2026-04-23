@@ -1,5 +1,6 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import TopBar from './components/TopBar'
+import AgentTab from './components/AgentTab'
 import VideoPlayer from './components/VideoPlayer'
 import TextDisplay from './components/TextDisplay'
 import BrainViewer from './components/BrainViewer'
@@ -9,6 +10,7 @@ import useStore from './stores/useStore'
 import { getMesh, getAtlas, getResults } from './utils/api'
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState('analyze')
   const mesh = useStore((s) => s.mesh)
   const setMesh = useStore((s) => s.setMesh)
   const inputType = useStore((s) => s.inputType)
@@ -130,8 +132,10 @@ export default function App() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-950 text-white">
-      <TopBar onLoadJob={loadJob} />
+      <TopBar activeTab={activeTab} onTabChange={setActiveTab} onLoadJob={loadJob} />
+      {activeTab === 'agent' && <AgentTab />}
 
+      <div className={`flex-1 flex flex-col min-h-0 ${activeTab === 'agent' ? 'hidden' : ''}`}>
       <div className="flex-1 flex min-h-0 relative">
         {/* Processing overlay */}
         {jobStatus === 'processing' && (
@@ -180,6 +184,7 @@ export default function App() {
 
       <div className="h-72 border-t border-gray-800">
         <RegionPanel />
+      </div>
       </div>
     </div>
   )
