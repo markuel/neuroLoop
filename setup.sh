@@ -332,6 +332,7 @@ step "Preparing brain data"
 
 if [ ! -f dashboard/backend/data/fsaverage5_mesh.npz ] || [ ! -f dashboard/backend/data/hcp_atlas.npz ]; then
   echo "  Generating mesh + atlas..."
+  mkdir -p "$HOME/mne_data"
   python scripts/bundle_mesh.py
   ok "Mesh and atlas generated"
 else
