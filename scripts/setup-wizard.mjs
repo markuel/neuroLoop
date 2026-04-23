@@ -13,7 +13,7 @@ if (existsSync(ENV_PATH) && !reconfigure) {
 }
 
 const cancel = () => { p.cancel('Setup cancelled.'); process.exit(1) }
-const ask = async (fn) => { const v = await fn; if (p.isCancel(v)) cancel(); return v }
+const ask = async (fn) => { const v = await fn(); if (p.isCancel(v)) cancel(); return v }
 
 p.intro('  neuroLoop — configuration')
 
