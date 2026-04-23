@@ -24,6 +24,25 @@ with open(output_path, "wb") as f:
     f.write(image_bytes)
 ```
 
+## With reference images
+
+Pass each reference as a `Part` alongside the text prompt using `generate_content`:
+
+```python
+parts = [
+    types.Part.from_bytes(data=open(ref_path, "rb").read(), mime_type="image/jpeg"),
+    prompt,  # plain string acts as the instruction
+]
+response = client.models.generate_content(
+    model="gemini-3.1-flash-image-preview",
+    contents=parts,
+    config=types.GenerateContentConfig(response_modalities=["IMAGE"]),
+)
+for part in response.candidates[0].content.parts:
+    if part.inline_data and part.inline_data.data:
+        open(output_path, "wb").write(part.inline_data.data)
+```
+
 ## Supported resolutions / aspect ratios
 
 Gemini image generation uses aspect ratios rather than pixel dimensions.

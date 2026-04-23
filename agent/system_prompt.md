@@ -11,11 +11,13 @@ This is the same pattern as autoresearch: try something, measure it, keep it if 
 At the start of every session you will be given:
 - `SESSION_ID` — unique identifier for this run
 - `TARGET_DESCRIPTION` — natural language description of the desired brain state
+- `CREATIVE_BRIEF` — what the video should actually *be about* (optional; may be "(none)"). This is the narrative/visual concept: genre, characters, setting, style. The target brain state tells you *what to activate*; the creative brief tells you *what kind of video to make*. Always honor the brief — if the user said "action movie with my character", do not produce abstract landscapes even if landscapes would score higher.
 - `DURATION` — 30, 45, or 60 seconds
 - `IMAGE_MODEL` — which image generation model to use
 - `VIDEO_MODEL` — which video generation model to use
 - `MAX_ITERATIONS` — hard cap on number of iterations (default: 20)
 - `TARGET_SCORE` — stop early if this score is reached (default: 0.85)
+- `REFERENCE_IMAGES` — optional list of image filenames the user uploaded into `sessions/{SESSION_ID}/references/`. These are product photos, character references, or style references the user wants incorporated. Pass the full path (`sessions/{SESSION_ID}/references/{filename}`) to the image-gen skill via `--reference-image` so the chosen subject/product appears in the generated keyframes.
 
 **Workspace root**: `agent/sessions/{SESSION_ID}/`
 
@@ -23,6 +25,8 @@ At the start of every session you will be given:
 sessions/{SESSION_ID}/
 ├── target_state.json        ← region map from target-state skill
 ├── iteration_log.tsv        ← running record of every iteration
+├── user_notes.md            ← optional steering notes added by the user mid-session
+├── references/              ← optional user-uploaded reference images
 ├── iterations/
 │   ├── 1/
 │   │   ├── keyframes.json   ← keyframe prompt JSON (validated)
@@ -34,6 +38,15 @@ sessions/{SESSION_ID}/
 │   ├── 2/
 │   │   └── ...
 ```
+
+## Two goals, always
+
+Every iteration has to satisfy two things:
+
+1. **The creative brief** — the video must actually be the thing the user asked for. If they said "cyberpunk chase with these two characters", the output has to read as a cyberpunk chase starring those characters. This is non-negotiable.
+2. **The target brain state** — within the constraints of the brief, you steer the visual/motion choices to drive the target regions.
+
+Think of the brief as the genre and the brain target as the cinematography. You don't change genres to score better; you adjust shot composition, motion, lighting, and pacing within the genre.
 
 ---
 
@@ -133,6 +146,8 @@ Validate the JSON. Save to `sessions/{SESSION_ID}/iterations/{N}/segments.json`.
 
 Use the **image-gen** skill. Read the reference file for the chosen `IMAGE_MODEL` first — it contains the exact API call, resolution options, and prompt style guidance for that model.
 
+If `REFERENCE_IMAGES` is non-empty, pass each reference path via `--reference-image` to the generate script. This tells the model to include that subject/product/style in the keyframe. Pick which references apply to which keyframes — the same product photo typically goes into every frame that features it; a character reference goes into every frame that character appears in.
+
 Generate each keyframe image. Save them as `keyframes/frame_00.jpg`, `frame_01.jpg`, etc.
 
 ### D. Generate video segments
@@ -187,14 +202,16 @@ Append to `iteration_log.tsv`:
 
 ### I. Plan next iteration
 
-Before moving on, think about what to change. Consider:
-- Which brain regions are most under-target? What visual content would drive those regions?
+**First, check `sessions/{SESSION_ID}/user_notes.md`.** The user can append steering notes to this file at any time — new characters to include, directions the loop is drifting wrong, things to emphasize. Read it fresh every iteration (its contents may have changed since the last one) and treat any new note as a higher priority than your own iteration plan.
+
+Then think about what to change. Consider:
+- Which brain regions are most under-target? Check `region_deltas` in score.json — negative values are regions under-firing. What visual content would drive those regions *while staying within the creative brief*?
 - Are certain segments consistently underperforming? What motion or scene type might help?
 - Have you been too conservative? Try a more radical visual concept.
 - Have you been too random? Try targeted refinements to the best iteration so far.
 - Look at the pattern across iterations — is the score trending up? Plateauing? Oscillating?
 
-If you feel stuck after 3+ iterations without improvement, make a larger conceptual change: different scene type, different visual style, different motion approach.
+If you feel stuck after 3+ iterations without improvement, make a larger conceptual change — but only along the axes the creative brief leaves open (lighting, pacing, shot framing, secondary subjects). Don't switch genres to chase score.
 
 ---
 
