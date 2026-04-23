@@ -13,6 +13,7 @@ from .storage import (
 )
 from .mesh import get_fsaverage5_mesh_binary
 from .predict import start_prediction, get_job, list_jobs, get_atlas_data, load_manifest
+from .agent import start_session, get_session, stop_session, list_sessions, SESSIONS_DIR
 
 app = FastAPI(title="neuroLoop API")
 app.add_middleware(
@@ -189,3 +190,57 @@ def results(job_id: str):
 @app.get("/api/runs")
 def runs():
     return {"runs": list_jobs()}
+
+
+# ------------------------------------------------------------------
+# Config
+# ------------------------------------------------------------------
+
+@app.get("/api/config")
+def config():
+    import os
+    return {
+        "image_model": os.environ.get("IMAGE_MODEL", "openai"),
+        "video_model": os.environ.get("VIDEO_MODEL", "veo"),
+    }
+
+
+# ------------------------------------------------------------------
+# Agent sessions
+# ------------------------------------------------------------------
+
+class AgentStartRequest(BaseModel):
+    target_description: str
+    duration: int = 30
+    max_iterations: int = 20
+    target_score: float = 0.85
+
+@app.post("/api/agent/start")
+def agent_start(req: AgentStartRequest):
+    session_id = start_session(req.model_dump())
+    return {"session_id": session_id}
+
+@app.get("/api/agent/sessions")
+def agent_sessions():
+    return {"sessions": list_sessions()}
+
+@app.get("/api/agent/sessions/{session_id}")
+def agent_session(session_id: str):
+    s = get_session(session_id)
+    if s is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Session not found")
+    return s
+
+@app.post("/api/agent/sessions/{session_id}/stop")
+def agent_stop(session_id: str):
+    ok = stop_session(session_id)
+    return {"stopped": ok}
+
+@app.get("/api/agent/sessions/{session_id}/video/{iteration}")
+def agent_video(session_id: str, iteration: int):
+    video_path = SESSIONS_DIR / session_id / "iterations" / str(iteration) / "final.mp4"
+    if not video_path.exists():
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Video not found")
+    return FileResponse(str(video_path), media_type="video/mp4")
