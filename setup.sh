@@ -15,17 +15,19 @@ ok()   { echo -e "  ${GREEN}✓${NC} $1"; }
 warn() { echo -e "  ${YELLOW}!${NC} $1"; }
 step() { echo -e "\n${BOLD}$1${NC}"; }
 
-# Show first 4 + dots + last 4 so the user can verify the paste without revealing the full key
+# Show first 4 + stars + last 4 so the user can verify the paste without revealing the full key
 mask_key() {
   local val="$1"
   local len=${#val}
   if [ $len -eq 0 ]; then
-    echo "(empty)"
+    printf '(empty)'
   elif [ $len -le 8 ]; then
-    printf '•%.0s' $(seq 1 $len)
+    printf '%0.s*' $(seq 1 $len)
   else
     local dots=$(( len - 8 ))
-    printf '%s%s%s' "${val:0:4}" "$(printf '•%.0s' $(seq 1 $dots))" "${val: -4}"
+    printf '%s' "${val:0:4}"
+    printf '%0.s*' $(seq 1 $dots)
+    printf '%s' "${val: -4}"
   fi
 }
 
@@ -61,7 +63,7 @@ else
   echo ""
   read -rsp "  Token: " HF_TOKEN
   echo ""
-  echo -e "  ${DIM}$(mask_key "$HF_TOKEN")${NC}"
+  printf '  %s\n' "$(mask_key "$HF_TOKEN")"
   if [ -z "$HF_TOKEN" ]; then
     warn "No token entered — model download will fail. Re-run setup.sh --reconfigure to fix this."
   else
@@ -104,7 +106,7 @@ else
   echo ""
   read -rsp "  Anthropic API key: " ANTHROPIC_API_KEY
   echo ""
-  echo -e "  ${DIM}$(mask_key "$ANTHROPIC_API_KEY")${NC}"
+  printf '  %s\n' "$(mask_key "$ANTHROPIC_API_KEY")"
   if [ -z "$ANTHROPIC_API_KEY" ]; then
     warn "No key entered — the agent loop won't work. Re-run setup.sh --reconfigure to fix this."
   else
@@ -132,7 +134,7 @@ else
       echo ""
       read -rsp "  OpenAI API key: " OPENAI_API_KEY
       echo ""
-      echo -e "  ${DIM}$(mask_key "$OPENAI_API_KEY")${NC}"
+      printf '  %s\n' "$(mask_key "$OPENAI_API_KEY")"
       ok "Image model: GPT-image-2"
       ;;
     2)
@@ -140,7 +142,7 @@ else
       echo ""
       read -rsp "  Google Gemini API key: " GEMINI_API_KEY
       echo ""
-      echo -e "  ${DIM}$(mask_key "$GEMINI_API_KEY")${NC}"
+      printf '  %s\n' "$(mask_key "$GEMINI_API_KEY")"
       ok "Image model: Gemini 3.1 Flash Image"
       ;;
     3)
@@ -148,7 +150,7 @@ else
       echo ""
       read -rsp "  xAI API key: " XAI_API_KEY
       echo ""
-      echo -e "  ${DIM}$(mask_key "$XAI_API_KEY")${NC}"
+      printf '  %s\n' "$(mask_key "$XAI_API_KEY")"
       ok "Image model: Grok Imagine Image"
       ;;
     *)
@@ -156,7 +158,7 @@ else
       warn "Invalid choice — defaulting to OpenAI"
       read -rsp "  OpenAI API key: " OPENAI_API_KEY
       echo ""
-      echo -e "  ${DIM}$(mask_key "$OPENAI_API_KEY")${NC}"
+      printf '  %s\n' "$(mask_key "$OPENAI_API_KEY")"
       ;;
   esac
 
@@ -188,7 +190,7 @@ else
       echo ""
       read -rsp "  Replicate API key: " REPLICATE_API_KEY
       echo ""
-      echo -e "  ${DIM}$(mask_key "$REPLICATE_API_KEY")${NC}"
+      printf '  %s\n' "$(mask_key "$REPLICATE_API_KEY")"
       ok "Video model: Seedance 2.0"
       ;;
     3)
