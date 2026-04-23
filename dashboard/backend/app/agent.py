@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,36 +12,65 @@ SESSIONS_DIR = Path(__file__).resolve().parents[3] / "agent" / "sessions"
 _sessions: dict[str, dict] = {}
 
 
-def _build_initial_message(session_id: str, params: dict) -> str:
+def _build_initial_message(session_id: str, params: dict, references: list[str]) -> str:
+    brief = params.get("creative_brief", "").strip()
+    ref_block = ""
+    if references:
+        rels = "\n".join(f"  - {r}" for r in references)
+        ref_block = f"REFERENCE_IMAGES:\n{rels}\n"
     return (
         f"SESSION_ID: {session_id}\n"
         f"TARGET_DESCRIPTION: {params['target_description']}\n"
+        f"CREATIVE_BRIEF: {brief or '(none — agent has full creative control)'}\n"
         f"DURATION: {params['duration']}\n"
         f"IMAGE_MODEL: {params.get('image_model', os.environ.get('IMAGE_MODEL', 'openai'))}\n"
         f"VIDEO_MODEL: {params.get('video_model', os.environ.get('VIDEO_MODEL', 'veo'))}\n"
         f"MAX_ITERATIONS: {params.get('max_iterations', 20)}\n"
-        f"TARGET_SCORE: {params.get('target_score', 0.85)}\n\n"
+        f"TARGET_SCORE: {params.get('target_score', 0.85)}\n"
+        f"{ref_block}\n"
         f"Begin the session now."
     )
 
 
-def start_session(params: dict) -> str:
+def _new_session_id() -> str:
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    session_id = f"session_{ts}_{uuid.uuid4().hex[:4]}"
+    return f"session_{ts}_{uuid.uuid4().hex[:4]}"
+
+
+def create_draft_session() -> str:
+    """Create an empty session directory (references/) so the UI can upload files before start."""
+    session_id = _new_session_id()
+    session_dir = SESSIONS_DIR / session_id
+    (session_dir / "references").mkdir(parents=True, exist_ok=True)
+    return session_id
+
+
+def list_references(session_id: str) -> list[str]:
+    ref_dir = SESSIONS_DIR / session_id / "references"
+    if not ref_dir.exists():
+        return []
+    return sorted(p.name for p in ref_dir.iterdir() if p.is_file())
+
+
+def start_session(params: dict, session_id: str | None = None) -> str:
+    if session_id is None:
+        session_id = _new_session_id()
 
     session_dir = SESSIONS_DIR / session_id
     session_dir.mkdir(parents=True, exist_ok=True)
+    (session_dir / "references").mkdir(parents=True, exist_ok=True)
+
+    references = list_references(session_id)
 
     log_path = session_dir / "claude_output.log"
     log_file = open(log_path, "w")
 
     repo_root = Path(__file__).resolve().parents[3]
-    message = _build_initial_message(session_id, params)
+    message = _build_initial_message(session_id, params, references)
 
     proc = subprocess.Popen(
         ["claude", "-p", message],
         cwd=str(repo_root),
-        env={**os.environ},
         stdout=log_file,
         stderr=subprocess.STDOUT,
     )
@@ -122,6 +152,7 @@ def get_session(session_id: str) -> dict | None:
     step, current_iteration = _infer_step(session_dir)
     iterations = _read_iteration_log(session_dir)
     best_score = max((it["score"] for it in iterations), default=0.0)
+    references = list_references(session_id)
 
     return {
         "session_id": session_id,
@@ -132,6 +163,8 @@ def get_session(session_id: str) -> dict | None:
         "current_iteration": current_iteration,
         "best_score": round(best_score, 4),
         "iterations": iterations,
+        "references": references,
+        "has_started": (session_dir / "claude_output.log").exists(),
     }
 
 
@@ -159,6 +192,86 @@ def tail_log(session_id: str, offset: int = 0):
     return chunk, new_offset
 
 
+# ----------------------------------------------------------------------
+# Artifact scanning — feeds the live artifact SSE stream
+# ----------------------------------------------------------------------
+
+_ARTIFACT_TYPES = (
+    "keyframes.json",
+    "segments.json",
+    "final.mp4",
+    "score.json",
+)
+
+
+def scan_artifacts(session_id: str) -> list[dict]:
+    """Return every artifact currently on disk for this session.
+
+    Each entry has: {iteration, kind, path, mtime}. The frontend diffs
+    against its local set to detect new arrivals.
+    """
+    session_dir = SESSIONS_DIR / session_id
+    iterations_dir = session_dir / "iterations"
+    out: list[dict] = []
+    if not iterations_dir.exists():
+        return out
+
+    for d in sorted(iterations_dir.iterdir()):
+        if not d.is_dir() or not d.name.isdigit():
+            continue
+        n = int(d.name)
+
+        # Single-file artifacts
+        for kind in _ARTIFACT_TYPES:
+            p = d / kind
+            if p.exists():
+                out.append({
+                    "iteration": n,
+                    "kind": kind,
+                    "path": f"iterations/{n}/{kind}",
+                    "mtime": p.stat().st_mtime,
+                })
+
+        # Keyframe images
+        kf_dir = d / "keyframes"
+        if kf_dir.exists():
+            for p in sorted(kf_dir.glob("frame_*.jpg")):
+                out.append({
+                    "iteration": n,
+                    "kind": "keyframe",
+                    "path": f"iterations/{n}/keyframes/{p.name}",
+                    "mtime": p.stat().st_mtime,
+                })
+
+        # Video segments
+        seg_dir = d / "segments"
+        if seg_dir.exists():
+            for p in sorted(seg_dir.glob("seg_*.mp4")):
+                out.append({
+                    "iteration": n,
+                    "kind": "segment",
+                    "path": f"iterations/{n}/segments/{p.name}",
+                    "mtime": p.stat().st_mtime,
+                })
+
+    return out
+
+
+def append_user_note(session_id: str, note: str) -> None:
+    """Append a timestamped note to sessions/{id}/user_notes.md.
+
+    The agent is instructed to re-read this file at the start of every
+    iteration's planning step so the user can steer the loop without
+    restructuring it.
+    """
+    session_dir = SESSIONS_DIR / session_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+    path = session_dir / "user_notes.md"
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(f"## {ts}\n{note.strip()}\n\n")
+
+
 def list_sessions() -> list[dict]:
     seen = set()
     result = []
@@ -175,7 +288,7 @@ def list_sessions() -> list[dict]:
         for d in sorted(SESSIONS_DIR.iterdir(), reverse=True):
             if d.is_dir() and d.name not in seen:
                 s = get_session(d.name)
-                if s:
+                if s and s.get("has_started"):
                     result.append(s)
 
     return result
