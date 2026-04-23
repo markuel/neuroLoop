@@ -19,7 +19,12 @@ export default function UploadModal({ mode, onClose }) {
     try {
       reset()
       const { upload_url, s3_key } = await getUploadUrl(file.name, file.type)
-      await fetch(upload_url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } })
+      const putRes = await fetch(upload_url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } })
+      if (!putRes.ok) {
+        const body = await putRes.text()
+        console.error('S3 PUT failed', putRes.status, body)
+        throw new Error(`S3 upload failed (${putRes.status}): ${body.slice(0, 500)}`)
+      }
       const inputType = file.type.startsWith('audio') ? 'audio' : 'video'
       setInput(inputType, URL.createObjectURL(file), null)
       const { job_id } = await startPredict(s3_key, inputType)
@@ -41,7 +46,12 @@ export default function UploadModal({ mode, onClose }) {
       const blob = new Blob([text], { type: 'text/plain' })
       const filename = 'input.txt'
       const { upload_url, s3_key } = await getUploadUrl(filename, 'text/plain')
-      await fetch(upload_url, { method: 'PUT', body: blob, headers: { 'Content-Type': 'text/plain' } })
+      const putRes = await fetch(upload_url, { method: 'PUT', body: blob, headers: { 'Content-Type': 'text/plain' } })
+      if (!putRes.ok) {
+        const body = await putRes.text()
+        console.error('S3 PUT failed', putRes.status, body)
+        throw new Error(`S3 upload failed (${putRes.status}): ${body.slice(0, 500)}`)
+      }
       setInput('text', null, text)
       const { job_id } = await startPredict(s3_key, 'text')
       setJob({ jobId: job_id, jobStatus: 'processing', jobProgress: 0 })
