@@ -48,3 +48,7 @@ data/
 
 # Agent sessions (generated videos, keyframes, scores — can be large)
 agent/sessions/
+
+# Setup wizard deps
+scripts/node_modules/
+scripts/package-lock.json

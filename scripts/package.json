@@ -1,0 +1,8 @@
+{
+  "name": "neuroloop-setup-wizard",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@clack/prompts": "^0.9.0"
+  }
+}
