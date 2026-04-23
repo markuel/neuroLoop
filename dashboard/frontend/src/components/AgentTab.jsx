@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   getConfig, startAgentSession, getAgentSession,
-  getAgentSessions, stopAgentSession, agentVideoUrl,
+  getAgentSessions, stopAgentSession, agentVideoUrl, agentLogStreamUrl,
 } from '../utils/api'
 
 const STEP_LABELS = {
@@ -127,13 +127,12 @@ function ConfigForm({ config, onStart }) {
   )
 }
 
-function LiveSession({ session, onStop, selectedIteration, onSelectIteration }) {
+function LiveSession({ session, onStop }) {
   const params = session.params || {}
   const isRunning = session.is_running
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Status header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           {isRunning && (
@@ -160,7 +159,6 @@ function LiveSession({ session, onStop, selectedIteration, onSelectIteration }) 
         )}
       </div>
 
-      {/* Target + best score */}
       {params.target_description && (
         <p className="text-xs text-gray-500 italic">"{params.target_description}"</p>
       )}
@@ -177,7 +175,7 @@ function LiveSession({ session, onStop, selectedIteration, onSelectIteration }) 
   )
 }
 
-function IterationTable({ iterations, sessionId, selectedIteration, onSelect }) {
+function IterationTable({ iterations, selectedIteration, onSelect }) {
   if (!iterations.length) {
     return <p className="text-xs text-gray-600 mt-2">No completed iterations yet.</p>
   }
@@ -214,6 +212,121 @@ function IterationTable({ iterations, sessionId, selectedIteration, onSelect }) 
   )
 }
 
+// Classify a log line to give it a colour
+function lineColor(text) {
+  const t = text.toLowerCase()
+  if (t.startsWith('error') || t.includes('traceback') || t.includes('exception')) return 'text-red-400'
+  if (t.startsWith('warning') || t.startsWith('warn')) return 'text-yellow-400'
+  if (t.includes('score') || t.includes('iteration') || t.includes('keep') || t.includes('discard')) return 'text-green-400'
+  if (t.startsWith('>') || t.startsWith('$') || t.includes('running') || t.includes('generating')) return 'text-blue-400'
+  if (t.startsWith('#') || t.startsWith('---') || t.startsWith('===')) return 'text-purple-400'
+  return 'text-gray-300'
+}
+
+function LogFeed({ sessionId, isRunning }) {
+  const [lines, setLines] = useState([])
+  const [autoScroll, setAutoScroll] = useState(true)
+  const endRef = useRef(null)
+  const containerRef = useRef(null)
+  const esRef = useRef(null)
+
+  useEffect(() => {
+    if (!sessionId) {
+      setLines([])
+      return
+    }
+
+    setLines([])
+    setAutoScroll(true)
+
+    const es = new EventSource(agentLogStreamUrl(sessionId))
+    esRef.current = es
+
+    es.onmessage = (e) => {
+      const text = e.data
+      if (text.trim()) {
+        setLines(prev => [...prev, text])
+      }
+    }
+
+    es.addEventListener('done', () => {
+      es.close()
+    })
+
+    es.onerror = () => {
+      es.close()
+    }
+
+    return () => {
+      es.close()
+    }
+  }, [sessionId])
+
+  // Auto-scroll to bottom when new lines arrive
+  useEffect(() => {
+    if (autoScroll && endRef.current) {
+      endRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [lines, autoScroll])
+
+  const handleScroll = () => {
+    const el = containerRef.current
+    if (!el) return
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60
+    setAutoScroll(atBottom)
+  }
+
+  if (!sessionId) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-gray-700 text-sm">
+        Start a session to see agent output
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800">
+        <span className="text-xs text-gray-500 uppercase tracking-wider">Agent output</span>
+        <div className="flex items-center gap-3">
+          {isRunning && (
+            <span className="flex items-center gap-1.5 text-xs text-green-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />
+              live
+            </span>
+          )}
+          <button
+            onClick={() => {
+              setAutoScroll(true)
+              endRef.current?.scrollIntoView({ behavior: 'smooth' })
+            }}
+            className="text-xs text-gray-600 hover:text-gray-400 transition"
+          >
+            ↓ bottom
+          </button>
+        </div>
+      </div>
+
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto px-4 py-3 font-mono text-xs leading-relaxed"
+      >
+        {lines.length === 0 ? (
+          <span className="text-gray-700">Waiting for output…</span>
+        ) : (
+          lines.map((line, i) => (
+            <div key={i} className={`whitespace-pre-wrap break-all ${lineColor(line)}`}>
+              {line}
+            </div>
+          ))
+        )}
+        <div ref={endRef} />
+      </div>
+    </div>
+  )
+}
+
 export default function AgentTab() {
   const [config, setConfig] = useState(null)
   const [pastSessions, setPastSessions] = useState([])
@@ -222,7 +335,6 @@ export default function AgentTab() {
   const [selectedIteration, setSelectedIteration] = useState(null)
   const pollRef = useRef(null)
 
-  // Load config + past sessions on mount
   useEffect(() => {
     getConfig().then(setConfig).catch(() => {})
     getAgentSessions()
@@ -230,7 +342,7 @@ export default function AgentTab() {
       .catch(() => {})
   }, [])
 
-  // Poll active session
+  // Poll active session for structured status
   useEffect(() => {
     if (pollRef.current) clearInterval(pollRef.current)
     if (!activeSessionId) return
@@ -248,7 +360,7 @@ export default function AgentTab() {
     return () => clearInterval(pollRef.current)
   }, [activeSessionId])
 
-  // Auto-select latest video when iteration changes
+  // Auto-select latest video when a new iteration completes
   useEffect(() => {
     if (!sessionData) return
     const last = sessionData.iterations.at(-1)
@@ -271,28 +383,19 @@ export default function AgentTab() {
     setSessionData(session)
   }
 
-  const videoSid = activeSessionId
-  const showVideo = videoSid && selectedIteration != null
+  const showVideo = activeSessionId && selectedIteration != null
 
   return (
     <div className="flex-1 flex min-h-0 overflow-hidden">
 
-      {/* Left panel */}
-      <div className="w-96 flex-shrink-0 border-r border-gray-800 flex flex-col overflow-y-auto">
-
-        {/* Configure / live status */}
+      {/* Left panel — config / status / past sessions */}
+      <div className="w-80 flex-shrink-0 border-r border-gray-800 flex flex-col overflow-y-auto">
         <div className="p-5 border-b border-gray-800">
           {activeSessionId && sessionData ? (
-            <LiveSession
-              session={sessionData}
-              onStop={handleStop}
-              selectedIteration={selectedIteration}
-              onSelectIteration={setSelectedIteration}
-            />
+            <LiveSession session={sessionData} onStop={handleStop} />
           ) : (
             <ConfigForm config={config} onStart={handleStart} />
           )}
-
           {activeSessionId && (
             <button
               onClick={() => { setActiveSessionId(null); setSessionData(null) }}
@@ -303,7 +406,6 @@ export default function AgentTab() {
           )}
         </div>
 
-        {/* Past sessions */}
         {pastSessions.length > 0 && (
           <div className="p-5">
             <p className="text-xs text-gray-500 mb-3 uppercase tracking-wider">Past sessions</p>
@@ -332,34 +434,38 @@ export default function AgentTab() {
         )}
       </div>
 
-      {/* Right panel — iteration log + video */}
-      <div className="flex-1 flex flex-col min-h-0">
+      {/* Center — live agent log feed */}
+      <div className="flex-1 flex flex-col min-h-0 border-r border-gray-800 bg-gray-950">
+        <LogFeed
+          sessionId={activeSessionId}
+          isRunning={sessionData?.is_running ?? false}
+        />
+      </div>
 
-        {/* Video preview */}
+      {/* Right panel — video + iteration table */}
+      <div className="w-80 flex-shrink-0 flex flex-col min-h-0">
         <div className="flex-1 min-h-0 bg-black flex items-center justify-center">
           {showVideo ? (
             <video
-              key={`${videoSid}-${selectedIteration}`}
-              src={agentVideoUrl(videoSid, selectedIteration)}
+              key={`${activeSessionId}-${selectedIteration}`}
+              src={agentVideoUrl(activeSessionId, selectedIteration)}
               controls
               autoPlay
               loop
               className="max-h-full max-w-full"
             />
           ) : (
-            <div className="text-gray-700 text-sm">
+            <div className="text-gray-700 text-sm text-center px-4">
               {activeSessionId ? 'Waiting for first video…' : 'Start a session to see videos here'}
             </div>
           )}
         </div>
 
-        {/* Iteration log */}
         {sessionData?.iterations?.length > 0 && (
           <div className="border-t border-gray-800 p-4 max-h-56 overflow-y-auto">
-            <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Iteration log</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Iterations</p>
             <IterationTable
               iterations={sessionData.iterations}
-              sessionId={activeSessionId}
               selectedIteration={selectedIteration}
               onSelect={setSelectedIteration}
             />

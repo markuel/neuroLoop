@@ -146,6 +146,19 @@ def stop_session(session_id: str) -> bool:
     return False
 
 
+def tail_log(session_id: str, offset: int = 0):
+    """Yield new log bytes starting from `offset`. Returns (new_content, new_offset)."""
+    session_dir = SESSIONS_DIR / session_id
+    log_path = session_dir / "claude_output.log"
+    if not log_path.exists():
+        return "", offset
+    with open(log_path, "r", errors="replace") as f:
+        f.seek(offset)
+        chunk = f.read()
+        new_offset = f.tell()
+    return chunk, new_offset
+
+
 def list_sessions() -> list[dict]:
     seen = set()
     result = []

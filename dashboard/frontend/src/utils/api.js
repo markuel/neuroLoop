@@ -73,3 +73,7 @@ export async function stopAgentSession(sessionId) {
 export function agentVideoUrl(sessionId, iteration) {
   return `/api/agent/sessions/${sessionId}/video/${iteration}`
 }
+
+export function agentLogStreamUrl(sessionId) {
+  return `/api/agent/sessions/${sessionId}/log-stream`
+}

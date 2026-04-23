@@ -1,7 +1,8 @@
 # dashboard/backend/app/main.py
+import asyncio
 from fastapi import FastAPI, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 from .storage import (
@@ -13,7 +14,7 @@ from .storage import (
 )
 from .mesh import get_fsaverage5_mesh_binary
 from .predict import start_prediction, get_job, list_jobs, get_atlas_data, load_manifest
-from .agent import start_session, get_session, stop_session, list_sessions, SESSIONS_DIR
+from .agent import start_session, get_session, stop_session, list_sessions, tail_log, SESSIONS_DIR
 
 app = FastAPI(title="neuroLoop API")
 app.add_middleware(
@@ -244,3 +245,32 @@ def agent_video(session_id: str, iteration: int):
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Video not found")
     return FileResponse(str(video_path), media_type="video/mp4")
+
+
+@app.get("/api/agent/sessions/{session_id}/log-stream")
+async def agent_log_stream(session_id: str):
+    """SSE stream of the agent's raw Claude output log."""
+    async def event_generator():
+        offset = 0
+        while True:
+            chunk, offset = tail_log(session_id, offset)
+            if chunk:
+                # Split into lines and emit each as an SSE data event
+                for line in chunk.splitlines(keepends=True):
+                    safe = line.replace("\n", " ").replace("\r", "")
+                    yield f"data: {safe}\n\n"
+            # Check if session has finished
+            s = get_session(session_id)
+            if s and not s["is_running"] and not chunk:
+                yield "event: done\ndata: \n\n"
+                break
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
