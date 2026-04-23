@@ -19,10 +19,13 @@ p.intro('  neuroLoop — setup')
 
 // ── HuggingFace ──────────────────────────────────────────────────────────────
 p.note(
-  'TRIBE v2 is a gated model on HuggingFace.\n' +
+  'Two steps before you can run TRIBE v2:\n' +
   '\n' +
-  '1. Get a token at:  https://huggingface.co/settings/tokens\n' +
-  '2. Accept the license at:  https://huggingface.co/facebook/tribev2',
+  '1. Request access to the LLaMA 3.2-3B text encoder (auto-approved):\n' +
+  '   https://huggingface.co/meta-llama/Llama-3.2-3B\n' +
+  '\n' +
+  '2. Create a HuggingFace token (read scope) to download models:\n' +
+  '   https://huggingface.co/settings/tokens',
   'HuggingFace'
 )
 
@@ -34,8 +37,8 @@ const hfToken = await ask(() => p.password({
 const storageMode = await ask(() => p.select({
   message: 'Where should neuroLoop store uploads and results?',
   options: [
-    { value: 'local', label: 'Local',  hint: 'on this machine — simplest, good for a single GPU instance' },
-    { value: 's3',    label: 'AWS S3', hint: 'results persist if the instance restarts' },
+    { value: 'local', label: 'Local',  hint: 'saved to this instance only — data is lost if the instance is deleted' },
+    { value: 's3',    label: 'AWS S3', hint: 'saved to S3 — survives instance deletion, attach to any new instance' },
   ],
 }))
 
