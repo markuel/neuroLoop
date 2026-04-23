@@ -14,11 +14,9 @@ skills/             Claude Code skills: image-gen, video-gen, stitch-video, vide
 scripts/            One-time data prep (bundle_mesh.py)
 ```
 
-## Running the agent loop
+## Agent loop instructions
 
-When the user provides session parameters (SESSION_ID, TARGET_DESCRIPTION, DURATION, IMAGE_MODEL, VIDEO_MODEL, MAX_ITERATIONS, TARGET_SCORE), read `agent/system_prompt.md` in full and follow those instructions exactly. Do not summarize or skip steps.
-
-Brain region reference — read this before designing any prompts: `agent/brain_regions.md`
+@agent/system_prompt.md
 
 ## SDK notes
 

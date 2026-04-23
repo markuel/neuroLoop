@@ -20,7 +20,7 @@ def _build_initial_message(session_id: str, params: dict) -> str:
         f"VIDEO_MODEL: {params.get('video_model', os.environ.get('VIDEO_MODEL', 'veo'))}\n"
         f"MAX_ITERATIONS: {params.get('max_iterations', 20)}\n"
         f"TARGET_SCORE: {params.get('target_score', 0.85)}\n\n"
-        f"Read agent/system_prompt.md in full, then begin the session immediately."
+        f"Begin the session now."
     )
 
 
