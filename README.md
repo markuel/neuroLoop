@@ -34,21 +34,12 @@ Once you're SSH'd into the instance, continue with setup below.
 ## Instance Setup
 
 ```bash
-# Clone and enter the repo
 git clone https://github.com/markuel/neuroLoop.git
 cd neuroLoop
-
-# Configure
-cp .env.example .env
-nano .env
-# add your hugging face token with access to Llama
-#   HF_TOKEN=your_huggingface_token
-
-# Run setup (installs everything + starts servers)
 bash setup.sh
 ```
 
-`setup.sh` handles the full program and model setup and deployment
+`setup.sh` walks you through configuration (HuggingFace token, storage mode) and handles the full install, model download, and server startup.
 
 Once running, open **http://localhost:5173** in your browser.
 
