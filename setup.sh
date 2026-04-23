@@ -39,7 +39,7 @@ else
   echo -e "${BOLD}Let's get you set up. This will only take a minute.${NC}"
 
   # ── HuggingFace token ──────────────────────────────────────────
-  step "Step 1 of 5 — HuggingFace Token"
+  step "Step 1 of 6 — HuggingFace Token"
   echo -e "  TRIBE v2 is a gated model. Get a token at:"
   echo -e "  ${DIM}https://huggingface.co/settings/tokens${NC}"
   echo -e "  Then accept the model license at:"
@@ -54,7 +54,7 @@ else
   fi
 
   # ── Storage mode ───────────────────────────────────────────────
-  step "Step 2 of 5 — Storage"
+  step "Step 2 of 6 — Storage"
   echo "  Where should neuroLoop store uploaded files and results?"
   echo ""
   echo -e "  ${BOLD}[1] Local${NC}  — on this machine  ${DIM}(simplest, good for one GPU instance)${NC}"
@@ -82,8 +82,21 @@ else
     ok "Local storage selected"
   fi
 
+  # ── Anthropic API key ──────────────────────────────────────────
+  step "Step 3 of 6 — Anthropic API Key"
+  echo "  The agent loop runs on Claude Code. It needs an Anthropic API key."
+  echo -e "  Get one at: ${DIM}https://console.anthropic.com/settings/keys${NC}"
+  echo ""
+  read -rsp "  Anthropic API key: " ANTHROPIC_API_KEY
+  echo ""
+  if [ -z "$ANTHROPIC_API_KEY" ]; then
+    warn "No key entered — the agent loop won't work. Re-run setup.sh --reconfigure to fix this."
+  else
+    ok "Anthropic API key saved"
+  fi
+
   # ── Image model ────────────────────────────────────────────────
-  step "Step 3 of 5 — Image Generation Model"
+  step "Step 4 of 6 — Image Generation Model"
   echo "  Which model should the agent use to generate keyframe images?"
   echo ""
   echo -e "  ${BOLD}[1] OpenAI GPT-image-2${NC}       ${DIM}Best prompt adherence, complex scenes${NC}"
@@ -128,7 +141,7 @@ else
   esac
 
   # ── Video model ────────────────────────────────────────────────
-  step "Step 4 of 5 — Video Generation Model"
+  step "Step 5 of 6 — Video Generation Model"
   echo "  Which model should the agent use to generate video segments?"
   echo ""
   echo -e "  ${BOLD}[1] Veo 3${NC}          ${DIM}(Google) Best motion quality, 8s clips${NC}"
@@ -177,7 +190,7 @@ else
   esac
 
   # ── Write .env ─────────────────────────────────────────────────
-  step "Step 5 of 5 — Saving configuration"
+  step "Step 6 of 6 — Saving configuration"
 
   cat > .env <<EOF
 # Storage
@@ -192,11 +205,14 @@ AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
 # TRIBE v2
 HF_TOKEN=${HF_TOKEN}
 
+# Agent — Claude Code
+ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+
 # Agent — model selection
 IMAGE_MODEL=${IMAGE_MODEL}
 VIDEO_MODEL=${VIDEO_MODEL}
 
-# Agent — API keys (only the chosen models need to be set)
+# Agent — provider API keys (only the chosen models need to be set)
 OPENAI_API_KEY=${OPENAI_API_KEY}
 GEMINI_API_KEY=${GEMINI_API_KEY}
 XAI_API_KEY=${XAI_API_KEY}
@@ -228,6 +244,13 @@ source .venv/bin/activate
 
 uv pip install -e ".[plotting]" -q
 uv pip install -r dashboard/backend/requirements.txt -q
+
+# Agent skill dependencies
+uv pip install -q \
+  openai \
+  google-genai \
+  replicate \
+  anthropic
 ok "Python dependencies installed"
 
 # ------------------------------------------------------------------
@@ -247,7 +270,44 @@ cd dashboard/frontend && npm install --silent && cd ../..
 ok "Frontend dependencies installed"
 
 # ------------------------------------------------------------------
-# 4. HuggingFace login + model download
+# 4. Claude Code
+# ------------------------------------------------------------------
+step "Setting up Claude Code"
+
+if ! command -v claude &>/dev/null; then
+  echo "  Installing Claude Code..."
+  curl -fsSL https://claude.ai/install.sh | bash
+  # Pick up the binary from wherever the installer put it
+  export PATH="$HOME/.local/bin:$HOME/.anthropic/bin:$PATH"
+fi
+ok "Claude Code $(claude --version 2>/dev/null | head -1)"
+
+# Project-level settings: bypass all permission prompts (safe — isolated GPU instance)
+mkdir -p .claude/skills
+cat > .claude/settings.json <<'SETTINGS'
+{
+  "permissions": {
+    "defaultMode": "bypassPermissions"
+  }
+}
+SETTINGS
+ok "Claude Code configured (bypassPermissions)"
+
+# Symlink each skill into .claude/skills/ so Claude Code discovers them
+_linked=0
+for skill_dir in skills/*/; do
+  skill_name=$(basename "$skill_dir")
+  target=".claude/skills/$skill_name"
+  if [ ! -e "$target" ]; then
+    ln -sf "../../skills/$skill_name" "$target"
+    _linked=$((_linked + 1))
+  fi
+done
+_total=$(ls -d skills/*/ 2>/dev/null | wc -l | tr -d ' ')
+ok "Skills linked (${_total} skills → .claude/skills/)"
+
+# ------------------------------------------------------------------
+# 5. HuggingFace login + model download
 # ------------------------------------------------------------------
 step "Downloading TRIBE v2 model"
 
@@ -266,7 +326,7 @@ else
 fi
 
 # ------------------------------------------------------------------
-# 5. Mesh + atlas data
+# 6. Mesh + atlas data
 # ------------------------------------------------------------------
 step "Preparing brain data"
 
@@ -283,7 +343,7 @@ python -c "from nilearn.datasets import fetch_surf_fsaverage; fetch_surf_fsavera
   || warn "fsaverage5 pre-cache failed — will retry at runtime"
 
 # ------------------------------------------------------------------
-# 6. Launch
+# 7. Launch
 # ------------------------------------------------------------------
 echo ""
 echo -e "${GREEN}${BOLD}  Setup complete.${NC}"
@@ -293,6 +353,7 @@ echo -e "  Video model : ${BOLD}${VIDEO_MODEL:-not set}${NC}"
 echo -e "  Storage     : ${BOLD}${STORAGE_MODE:-local}${NC}"
 echo ""
 echo -e "  Open ${BOLD}http://localhost:5173${NC} in your browser once servers start."
+echo -e "  Run ${BOLD}claude${NC} in this directory to start the agent loop."
 echo ""
 
 cd dashboard/backend
