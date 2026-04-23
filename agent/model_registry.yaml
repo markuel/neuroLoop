@@ -16,7 +16,7 @@ image_models:
     notes: "Fast and vivid. Good for abstract/stylized frames."
 
   grok:
-    name: "Grok 2 Image (Aurora)"
+    name: "Grok Imagine Image"
     provider: "xAI"
     api_key_env: "XAI_API_KEY"
     reference: "skills/image-gen/references/grok.md"

@@ -1,4 +1,4 @@
-# xAI Grok 2 Image (Aurora) — Image Generation Reference
+# xAI Grok Imagine Image — Image Generation Reference
 
 ## API call
 
@@ -16,7 +16,7 @@ response = requests.post(
         "Content-Type": "application/json",
     },
     json={
-        "model": "grok-2-image",
+        "model": "grok-imagine-image",
         "prompt": prompt,
         "n": 1,
         "size": size,          # see supported resolutions below

@@ -60,7 +60,7 @@ def generate_grok(prompt: str, resolution: str, output_path: Path) -> None:
             "Content-Type": "application/json",
         },
         json={
-            "model": "grok-2-image",
+            "model": "grok-imagine-image",
             "prompt": prompt,
             "n": 1,
             "size": resolution,
