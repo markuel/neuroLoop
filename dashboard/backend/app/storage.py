@@ -100,7 +100,17 @@ def get_local_file_path(key: str) -> Path:
 @lru_cache
 def _s3_client():
     import boto3
-    return boto3.client("s3")
+    from botocore.client import Config
+
+    # Force SigV4 and pin the region. Without these, presigned PUT URLs
+    # fall back to the deprecated SigV2 format, which every S3 region
+    # outside us-east-1 rejects with 403 SignatureDoesNotMatch.
+    region = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
+    return boto3.client(
+        "s3",
+        region_name=region,
+        config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}),
+    )
 
 
 def _s3_upload_url(filename: str, content_type: str) -> dict:
