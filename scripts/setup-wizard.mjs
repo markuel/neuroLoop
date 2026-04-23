@@ -15,20 +15,27 @@ if (existsSync(ENV_PATH) && !reconfigure) {
 const cancel = () => { p.cancel('Setup cancelled.'); process.exit(1) }
 const ask = async (fn) => { const v = await fn(); if (p.isCancel(v)) cancel(); return v }
 
-p.intro('  neuroLoop — configuration')
+p.intro('  neuroLoop — setup')
 
 // ── HuggingFace ──────────────────────────────────────────────────────────────
+p.note(
+  'TRIBE v2 is a gated model on HuggingFace.\n' +
+  '\n' +
+  '1. Get a token at:  https://huggingface.co/settings/tokens\n' +
+  '2. Accept the license at:  https://huggingface.co/facebook/tribev2',
+  'HuggingFace'
+)
+
 const hfToken = await ask(() => p.password({
-  message: 'HuggingFace token',
-  hint: 'huggingface.co/settings/tokens  ·  accept facebook/tribev2 license first',
+  message: 'Paste your HuggingFace token',
 }))
 
 // ── Storage ──────────────────────────────────────────────────────────────────
 const storageMode = await ask(() => p.select({
-  message: 'Storage',
+  message: 'Where should neuroLoop store uploads and results?',
   options: [
-    { value: 'local', label: 'Local',   hint: 'on this machine — simplest' },
-    { value: 's3',    label: 'AWS S3',  hint: 'results persist across restarts' },
+    { value: 'local', label: 'Local',  hint: 'on this machine — simplest, good for a single GPU instance' },
+    { value: 's3',    label: 'AWS S3', hint: 'results persist if the instance restarts' },
   ],
 }))
 
@@ -47,47 +54,71 @@ if (storageMode === 's3') {
 }
 
 // ── Anthropic ────────────────────────────────────────────────────────────────
+p.note(
+  'The agent loop runs on Claude Code and needs an Anthropic API key.\n' +
+  '\n' +
+  'Get one at:  https://console.anthropic.com/settings/keys',
+  'Anthropic'
+)
+
 const anthropicKey = await ask(() => p.password({
-  message: 'Anthropic API key',
-  hint: 'console.anthropic.com/settings/keys',
+  message: 'Paste your Anthropic API key',
 }))
 
 // ── Image model ───────────────────────────────────────────────────────────────
 const imageModel = await ask(() => p.select({
-  message: 'Image generation model',
+  message: 'Which model should the agent use to generate keyframe images?',
   options: [
-    { value: 'openai', label: 'GPT-image-2',            hint: 'best prompt adherence' },
-    { value: 'gemini', label: 'Gemini 3.1 Flash Image', hint: 'fast, vivid' },
-    { value: 'grok',   label: 'Grok Imagine Image',     hint: 'photorealistic' },
+    { value: 'openai', label: 'GPT-image-2',            hint: 'OpenAI — best prompt adherence, complex scenes' },
+    { value: 'gemini', label: 'Gemini 3.1 Flash Image', hint: 'Google — fast, vivid, good for abstract or stylized frames' },
+    { value: 'grok',   label: 'Grok Imagine Image',     hint: 'xAI — highly detailed and photorealistic' },
   ],
 }))
 
 let openaiKey = '', geminiKey = '', xaiKey = ''
 if (imageModel === 'openai') {
-  openaiKey = await ask(() => p.password({ message: 'OpenAI API key' }))
+  openaiKey = await ask(() => p.password({
+    message: 'OpenAI API key',
+    hint: 'platform.openai.com/api-keys',
+  }))
 } else if (imageModel === 'gemini') {
-  geminiKey = await ask(() => p.password({ message: 'Google Gemini API key' }))
+  geminiKey = await ask(() => p.password({
+    message: 'Google Gemini API key',
+    hint: 'aistudio.google.com/apikey',
+  }))
 } else {
-  xaiKey = await ask(() => p.password({ message: 'xAI API key' }))
+  xaiKey = await ask(() => p.password({
+    message: 'xAI API key',
+    hint: 'console.x.ai',
+  }))
 }
 
 // ── Video model ───────────────────────────────────────────────────────────────
 const videoModel = await ask(() => p.select({
-  message: 'Video generation model',
+  message: 'Which model should the agent use to generate video segments?',
   options: [
-    { value: 'veo',        label: 'Veo 3',              hint: 'Google — 8s clips, best motion' },
-    { value: 'seeddance',  label: 'Seedance 2.0',       hint: 'ByteDance via Replicate — 5s clips' },
-    { value: 'grok-video', label: 'Grok Imagine Video', hint: 'xAI — 10s clips' },
+    { value: 'veo',        label: 'Veo 3',              hint: 'Google — highest quality, native audio, 8s clips' },
+    { value: 'seeddance',  label: 'Seedance 2.0',       hint: 'ByteDance via Replicate — strong keyframe adherence, 5s clips' },
+    { value: 'grok-video', label: 'Grok Imagine Video', hint: 'xAI — high realism, cinematic, 10s clips' },
   ],
 }))
 
 let replicateKey = ''
 if (videoModel === 'veo' && !geminiKey) {
-  geminiKey = await ask(() => p.password({ message: 'Google Gemini API key' }))
+  geminiKey = await ask(() => p.password({
+    message: 'Google Gemini API key',
+    hint: 'aistudio.google.com/apikey',
+  }))
 } else if (videoModel === 'seeddance') {
-  replicateKey = await ask(() => p.password({ message: 'Replicate API key' }))
+  replicateKey = await ask(() => p.password({
+    message: 'Replicate API key',
+    hint: 'replicate.com/account/api-tokens',
+  }))
 } else if (videoModel === 'grok-video' && !xaiKey) {
-  xaiKey = await ask(() => p.password({ message: 'xAI API key' }))
+  xaiKey = await ask(() => p.password({
+    message: 'xAI API key',
+    hint: 'console.x.ai',
+  }))
 }
 
 // ── Write .env ────────────────────────────────────────────────────────────────
