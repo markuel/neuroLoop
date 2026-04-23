@@ -41,14 +41,14 @@ cd neuroLoop
 # Configure
 cp .env.example .env
 nano .env
-# add tour hugging face token with access to Llama
+# add your hugging face token with access to Llama
 #   HF_TOKEN=your_huggingface_token
 
 # Run setup (installs everything + starts servers)
 bash setup.sh
 ```
 
-`setup.sh` handles everything automatically:
+`setup.sh` handles the full program and model setup and deployment
 
 Once running, open **http://localhost:5173** in your browser.
 
