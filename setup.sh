@@ -24,16 +24,22 @@ echo -e "${DIM}  powered by Meta TRIBE v2${NC}"
 echo ""
 
 # ------------------------------------------------------------------
-# Config wizard — skip if .env already exists
+# Config wizard — skip if .env already exists (unless --reconfigure)
 # ------------------------------------------------------------------
-if [ -f .env ]; then
+RECONFIGURE=false
+for arg in "$@"; do
+  [ "$arg" = "--reconfigure" ] && RECONFIGURE=true
+done
+
+if [ -f .env ] && [ "$RECONFIGURE" = false ]; then
   ok ".env found — skipping configuration wizard"
+  echo -e "  ${DIM}Run ${NC}bash setup.sh --reconfigure${DIM} to change settings${NC}"
   set -a; source .env; set +a
 else
   echo -e "${BOLD}Let's get you set up. This will only take a minute.${NC}"
 
   # ── HuggingFace token ──────────────────────────────────────────
-  step "Step 1 of 3 — HuggingFace Token"
+  step "Step 1 of 6 — HuggingFace Token"
   echo -e "  TRIBE v2 is a gated model. Get a token at:"
   echo -e "  ${DIM}https://huggingface.co/settings/tokens${NC}"
   echo -e "  Then accept the model license at:"
@@ -42,13 +48,13 @@ else
   read -rsp "  Token: " HF_TOKEN
   echo ""
   if [ -z "$HF_TOKEN" ]; then
-    warn "No token entered — model download will fail. You can re-run setup.sh to fix this."
+    warn "No token entered — model download will fail. Re-run setup.sh --reconfigure to fix this."
   else
     ok "Token saved"
   fi
 
   # ── Storage mode ───────────────────────────────────────────────
-  step "Step 2 of 3 — Storage"
+  step "Step 2 of 6 — Storage"
   echo "  Where should neuroLoop store uploaded files and results?"
   echo ""
   echo -e "  ${BOLD}[1] Local${NC}  — on this machine  ${DIM}(simplest, good for one GPU instance)${NC}"
@@ -59,18 +65,13 @@ else
 
   if [ "$_storage_choice" = "2" ]; then
     STORAGE_MODE=s3
-
     echo ""
     read -rp "  S3 bucket name: " S3_BUCKET
-
     read -rp "  AWS region [us-east-1]: " AWS_DEFAULT_REGION
     AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
-
     read -rp "  AWS access key ID: " AWS_ACCESS_KEY_ID
-
     read -rsp "  AWS secret access key: " AWS_SECRET_ACCESS_KEY
     echo ""
-
     ok "S3 storage configured (bucket: $S3_BUCKET)"
   else
     STORAGE_MODE=local
@@ -81,18 +82,141 @@ else
     ok "Local storage selected"
   fi
 
+  # ── Anthropic API key ──────────────────────────────────────────
+  step "Step 3 of 6 — Anthropic API Key"
+  echo "  The agent loop runs on Claude Code. It needs an Anthropic API key."
+  echo -e "  Get one at: ${DIM}https://console.anthropic.com/settings/keys${NC}"
+  echo ""
+  read -rsp "  Anthropic API key: " ANTHROPIC_API_KEY
+  echo ""
+  if [ -z "$ANTHROPIC_API_KEY" ]; then
+    warn "No key entered — the agent loop won't work. Re-run setup.sh --reconfigure to fix this."
+  else
+    ok "Anthropic API key saved"
+  fi
+
+  # ── Image model ────────────────────────────────────────────────
+  step "Step 4 of 6 — Image Generation Model"
+  echo "  Which model should the agent use to generate keyframe images?"
+  echo ""
+  echo -e "  ${BOLD}[1] OpenAI GPT-image-2${NC}       ${DIM}Best prompt adherence, complex scenes${NC}"
+  echo -e "  ${BOLD}[2] Gemini 3.1 Flash Image${NC}   ${DIM}Fast, vivid, abstract/stylized${NC}"
+  echo -e "  ${BOLD}[3] Grok Imagine Image${NC}        ${DIM}Highly photorealistic, natural scenes${NC}"
+  echo ""
+  read -rp "  Choose [1/2/3] (default: 1): " _img_choice
+  _img_choice=${_img_choice:-1}
+
+  OPENAI_API_KEY=""
+  GEMINI_API_KEY=""
+  XAI_API_KEY=""
+
+  case "$_img_choice" in
+    1)
+      IMAGE_MODEL=openai
+      echo ""
+      read -rsp "  OpenAI API key: " OPENAI_API_KEY
+      echo ""
+      ok "Image model: GPT-image-2"
+      ;;
+    2)
+      IMAGE_MODEL=gemini
+      echo ""
+      read -rsp "  Google Gemini API key: " GEMINI_API_KEY
+      echo ""
+      ok "Image model: Gemini 3.1 Flash Image"
+      ;;
+    3)
+      IMAGE_MODEL=grok
+      echo ""
+      read -rsp "  xAI API key: " XAI_API_KEY
+      echo ""
+      ok "Image model: Grok Imagine Image"
+      ;;
+    *)
+      IMAGE_MODEL=openai
+      warn "Invalid choice — defaulting to OpenAI"
+      read -rsp "  OpenAI API key: " OPENAI_API_KEY
+      echo ""
+      ;;
+  esac
+
+  # ── Video model ────────────────────────────────────────────────
+  step "Step 5 of 6 — Video Generation Model"
+  echo "  Which model should the agent use to generate video segments?"
+  echo ""
+  echo -e "  ${BOLD}[1] Veo 3${NC}          ${DIM}(Google) Best motion quality, 8s clips${NC}"
+  echo -e "  ${BOLD}[2] Seedance 2.0${NC}   ${DIM}(ByteDance via Replicate) Strong keyframe adherence, 5s clips${NC}"
+  echo -e "  ${BOLD}[3] Grok Imagine${NC}   ${DIM}(xAI) High realism, 10s clips${NC}"
+  echo ""
+  read -rp "  Choose [1/2/3] (default: 1): " _vid_choice
+  _vid_choice=${_vid_choice:-1}
+
+  REPLICATE_API_KEY=""
+
+  case "$_vid_choice" in
+    1)
+      VIDEO_MODEL=veo
+      if [ -z "$GEMINI_API_KEY" ]; then
+        echo ""
+        read -rsp "  Google Gemini API key: " GEMINI_API_KEY
+        echo ""
+      fi
+      ok "Video model: Veo 3"
+      ;;
+    2)
+      VIDEO_MODEL=seeddance
+      echo ""
+      read -rsp "  Replicate API key: " REPLICATE_API_KEY
+      echo ""
+      ok "Video model: Seedance 2.0"
+      ;;
+    3)
+      VIDEO_MODEL=grok-video
+      if [ -z "$XAI_API_KEY" ]; then
+        echo ""
+        read -rsp "  xAI API key: " XAI_API_KEY
+        echo ""
+      fi
+      ok "Video model: Grok Imagine Video"
+      ;;
+    *)
+      VIDEO_MODEL=veo
+      warn "Invalid choice — defaulting to Veo 3"
+      if [ -z "$GEMINI_API_KEY" ]; then
+        read -rsp "  Google Gemini API key: " GEMINI_API_KEY
+        echo ""
+      fi
+      ;;
+  esac
+
   # ── Write .env ─────────────────────────────────────────────────
-  step "Step 3 of 3 — Saving configuration"
+  step "Step 6 of 6 — Saving configuration"
 
   cat > .env <<EOF
+# Storage
 STORAGE_MODE=${STORAGE_MODE}
-HF_TOKEN=${HF_TOKEN}
 
 # S3 settings (only used when STORAGE_MODE=s3)
 S3_BUCKET=${S3_BUCKET}
 AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
 AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
 AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+
+# TRIBE v2
+HF_TOKEN=${HF_TOKEN}
+
+# Agent — Claude Code
+ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+
+# Agent — model selection
+IMAGE_MODEL=${IMAGE_MODEL}
+VIDEO_MODEL=${VIDEO_MODEL}
+
+# Agent — provider API keys (only the chosen models need to be set)
+OPENAI_API_KEY=${OPENAI_API_KEY}
+GEMINI_API_KEY=${GEMINI_API_KEY}
+XAI_API_KEY=${XAI_API_KEY}
+REPLICATE_API_KEY=${REPLICATE_API_KEY}
 EOF
 
   set -a; source .env; set +a
@@ -120,6 +244,13 @@ source .venv/bin/activate
 
 uv pip install -e ".[plotting]" -q
 uv pip install -r dashboard/backend/requirements.txt -q
+
+# Agent skill dependencies
+uv pip install -q \
+  openai \
+  google-genai \
+  replicate \
+  anthropic
 ok "Python dependencies installed"
 
 # ------------------------------------------------------------------
@@ -139,7 +270,44 @@ cd dashboard/frontend && npm install --silent && cd ../..
 ok "Frontend dependencies installed"
 
 # ------------------------------------------------------------------
-# 4. HuggingFace login + model download
+# 4. Claude Code
+# ------------------------------------------------------------------
+step "Setting up Claude Code"
+
+if ! command -v claude &>/dev/null; then
+  echo "  Installing Claude Code..."
+  curl -fsSL https://claude.ai/install.sh | bash
+  # Pick up the binary from wherever the installer put it
+  export PATH="$HOME/.local/bin:$HOME/.anthropic/bin:$PATH"
+fi
+ok "Claude Code $(claude --version 2>/dev/null | head -1)"
+
+# Project-level settings: bypass all permission prompts (safe — isolated GPU instance)
+mkdir -p .claude/skills
+cat > .claude/settings.json <<'SETTINGS'
+{
+  "permissions": {
+    "defaultMode": "bypassPermissions"
+  }
+}
+SETTINGS
+ok "Claude Code configured (bypassPermissions)"
+
+# Symlink each skill into .claude/skills/ so Claude Code discovers them
+_linked=0
+for skill_dir in skills/*/; do
+  skill_name=$(basename "$skill_dir")
+  target=".claude/skills/$skill_name"
+  if [ ! -e "$target" ]; then
+    ln -sf "../../skills/$skill_name" "$target"
+    _linked=$((_linked + 1))
+  fi
+done
+_total=$(ls -d skills/*/ 2>/dev/null | wc -l | tr -d ' ')
+ok "Skills linked (${_total} skills → .claude/skills/)"
+
+# ------------------------------------------------------------------
+# 5. HuggingFace login + model download
 # ------------------------------------------------------------------
 step "Downloading TRIBE v2 model"
 
@@ -154,16 +322,17 @@ hf_hub_download('facebook/tribev2', 'best.ckpt',   local_dir='./cache/facebook/t
   ok "TRIBE v2 model ready"
 else
   warn "HF_TOKEN not set — skipping model download"
-  warn "Re-run setup.sh and enter your token to download the model"
+  warn "Re-run setup.sh --reconfigure and enter your token to download the model"
 fi
 
 # ------------------------------------------------------------------
-# 5. Mesh + atlas data
+# 6. Mesh + atlas data
 # ------------------------------------------------------------------
 step "Preparing brain data"
 
 if [ ! -f dashboard/backend/data/fsaverage5_mesh.npz ] || [ ! -f dashboard/backend/data/hcp_atlas.npz ]; then
   echo "  Generating mesh + atlas..."
+  mkdir -p "$HOME/mne_data"
   python scripts/bundle_mesh.py
   ok "Mesh and atlas generated"
 else
@@ -175,12 +344,17 @@ python -c "from nilearn.datasets import fetch_surf_fsaverage; fetch_surf_fsavera
   || warn "fsaverage5 pre-cache failed — will retry at runtime"
 
 # ------------------------------------------------------------------
-# 6. Launch
+# 7. Launch
 # ------------------------------------------------------------------
 echo ""
 echo -e "${GREEN}${BOLD}  Setup complete.${NC}"
 echo ""
+echo -e "  Image model : ${BOLD}${IMAGE_MODEL:-not set}${NC}"
+echo -e "  Video model : ${BOLD}${VIDEO_MODEL:-not set}${NC}"
+echo -e "  Storage     : ${BOLD}${STORAGE_MODE:-local}${NC}"
+echo ""
 echo -e "  Open ${BOLD}http://localhost:5173${NC} in your browser once servers start."
+echo -e "  Run ${BOLD}claude${NC} in this directory to start the agent loop."
 echo ""
 
 cd dashboard/backend

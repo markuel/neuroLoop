@@ -45,3 +45,6 @@ data/
 
 # playwright
 .playwright-mcp/
+
+# Agent sessions (generated videos, keyframes, scores — can be large)
+agent/sessions/

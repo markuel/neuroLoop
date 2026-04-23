@@ -1,0 +1,72 @@
+image_models:
+  openai:
+    name: "GPT-image-2"
+    provider: "OpenAI"
+    api_key_env: "OPENAI_API_KEY"
+    reference: "skills/image-gen/references/openai.md"
+    resolutions: ["1024x1024", "1792x1024", "1024x1792"]
+    notes: "Strongest prompt adherence. Best for complex scenes."
+
+  gemini:
+    name: "Gemini 3.1 Flash Image"
+    provider: "Google"
+    api_key_env: "GEMINI_API_KEY"
+    reference: "skills/image-gen/references/gemini.md"
+    resolutions: ["1024x1024"]
+    notes: "Fast and vivid. Good for abstract/stylized frames."
+
+  grok:
+    name: "Grok Imagine Image"
+    provider: "xAI"
+    api_key_env: "XAI_API_KEY"
+    reference: "skills/image-gen/references/grok.md"
+    resolutions: ["1024x1024", "1280x768"]
+    notes: "Highly detailed and photorealistic."
+
+video_models:
+  veo:
+    name: "Veo 3"
+    provider: "Google"
+    api_key_env: "GEMINI_API_KEY"
+    reference: "skills/video-gen/references/veo.md"
+    clip_seconds: 8
+    supports_keyframes: true
+    max_resolution: "1080p"
+    notes: "Highest quality. Native audio. Best motion realism."
+
+  seeddance:
+    name: "Seedance 2.0"
+    provider: "ByteDance (via Replicate)"
+    api_key_env: "REPLICATE_API_KEY"
+    reference: "skills/video-gen/references/seeddance.md"
+    clip_seconds: 5
+    supports_keyframes: true
+    max_resolution: "1080p"
+    notes: "Strong keyframe adherence. Supports start + end frame control."
+
+  grok-video:
+    name: "Grok Imagine Video"
+    provider: "xAI"
+    api_key_env: "XAI_API_KEY"
+    reference: "skills/video-gen/references/grok-video.md"
+    clip_seconds: 10
+    supports_keyframes: true
+    max_resolution: "720p"
+    notes: "10-second clips. Good for natural, cinematic scenes."
+
+# Segment counts use 5s clips as baseline.
+# If chosen video model uses longer clips, agent should adjust accordingly
+# by reading the model reference file.
+durations:
+  30:
+    label: "30 seconds"
+    segments: 6
+    keyframes: 7   # indices 0–6; segment[i] = keyframe[i] → keyframe[i+1]
+  45:
+    label: "45 seconds"
+    segments: 9
+    keyframes: 10
+  60:
+    label: "60 seconds"
+    segments: 12
+    keyframes: 13

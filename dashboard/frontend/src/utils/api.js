@@ -46,3 +46,34 @@ export async function getAtlas() {
 export async function getRuns() {
   return fetchJSON('/runs')
 }
+
+export async function getConfig() {
+  return fetchJSON('/config')
+}
+
+export async function startAgentSession(params) {
+  return fetchJSON('/agent/start', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export async function getAgentSession(sessionId) {
+  return fetchJSON(`/agent/sessions/${sessionId}`)
+}
+
+export async function getAgentSessions() {
+  return fetchJSON('/agent/sessions')
+}
+
+export async function stopAgentSession(sessionId) {
+  return fetchJSON(`/agent/sessions/${sessionId}/stop`, { method: 'POST' })
+}
+
+export function agentVideoUrl(sessionId, iteration) {
+  return `/api/agent/sessions/${sessionId}/video/${iteration}`
+}
+
+export function agentLogStreamUrl(sessionId) {
+  return `/api/agent/sessions/${sessionId}/log-stream`
+}
