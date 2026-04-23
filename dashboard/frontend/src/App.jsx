@@ -25,6 +25,8 @@ export default function App() {
   const isPlaying = useStore((s) => s.isPlaying)
   const atlasRef = useRef(null)
 
+  const setStoreAtlas = useStore((s) => s.setAtlas)
+
   // Load mesh + atlas on mount (binary mesh, JSON atlas — both cached)
   useEffect(() => {
     if (mesh) return
@@ -36,9 +38,12 @@ export default function App() {
           nVertices: meshData.nVertices,
         })
         atlasRef.current = atlasData
+        // Make regionVertices globally available so the agent tab's brain
+        // heatmap can paint without waiting for a prediction job.
+        setStoreAtlas?.(atlasData)
       })
       .catch((err) => console.error('Failed to load mesh/atlas:', err))
-  }, [mesh, setMesh])
+  }, [mesh, setMesh, setStoreAtlas])
 
   // Shared: fetch + parse + apply a completed job's results into the viewer
   const applyJobResults = useCallback(async (res, jobId) => {

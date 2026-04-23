@@ -54,6 +54,29 @@ python skills/image-gen/scripts/generate.py \
 
 The script reads the appropriate API key from the environment automatically.
 
+## Reference images (product photos, character refs, style refs)
+
+If the session has reference images in `sessions/{SESSION_ID}/references/`, pass them via `--reference-image`. The model will incorporate the referenced subject/style into the generated keyframe. Pass the flag multiple times to supply multiple references:
+
+```bash
+python skills/image-gen/scripts/generate.py \
+  --model openai \
+  --prompt "the character holding the product in a neon-lit city at night" \
+  --output .../frame_03.jpg \
+  --reference-image sessions/{SESSION_ID}/references/product.jpg \
+  --reference-image sessions/{SESSION_ID}/references/character.png
+```
+
+**Which references to pass to which frames:**
+- A product photo goes into every keyframe where the product appears.
+- A character reference goes into every keyframe that character is in.
+- A style reference (mood board, painting) can be used for all frames to lock visual tone.
+
+**Provider support:**
+- `openai` — full support via `images.edit`, multi-reference.
+- `gemini` — full support via multimodal `generate_content`.
+- `grok` — not supported. The script will error if references are passed with `--model grok`. Switch the session to openai or gemini if references are required.
+
 ## Output
 
 Images are saved as JPEG to the specified output path. Name them `frame_00.jpg`, `frame_01.jpg`, etc. in order.

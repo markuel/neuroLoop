@@ -23,6 +23,26 @@ with open(output_path, "wb") as f:
     f.write(image_bytes)
 ```
 
+## API call — with reference images
+
+When the user has uploaded product/character/style references, use `images.edit` instead. Pass one or more file handles as `image`.
+
+```python
+with open(reference_path, "rb") as ref:
+    response = client.images.edit(
+        model="gpt-image-2",
+        image=ref,           # or a list of file handles for multiple refs
+        prompt=prompt,       # describe the *output* — e.g. "the product on a table in a cyberpunk bar"
+        size=size,
+        quality="high",
+        output_format="jpeg",
+        n=1,
+    )
+image_bytes = base64.b64decode(response.data[0].b64_json)
+```
+
+The prompt in edit mode describes the desired output scene; the references provide the subject identity.
+
 ## Supported resolutions
 
 | Size | Use case |

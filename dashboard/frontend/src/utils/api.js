@@ -77,3 +77,41 @@ export function agentVideoUrl(sessionId, iteration) {
 export function agentLogStreamUrl(sessionId) {
   return `/api/agent/sessions/${sessionId}/log-stream`
 }
+
+export function agentArtifactsStreamUrl(sessionId) {
+  return `/api/agent/sessions/${sessionId}/artifacts-stream`
+}
+
+export function agentArtifactUrl(sessionId, path) {
+  return `/api/agent/sessions/${sessionId}/artifact/${path}`
+}
+
+export async function createDraftSession() {
+  return fetchJSON('/agent/sessions/draft', { method: 'POST' })
+}
+
+export async function uploadReference(sessionId, file) {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch(`${BASE}/agent/sessions/${sessionId}/references`, {
+    method: 'POST',
+    body: form,
+  })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  return res.json()
+}
+
+export async function deleteReference(sessionId, name) {
+  const res = await fetch(`${BASE}/agent/sessions/${sessionId}/references/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  return res.json()
+}
+
+export async function addAgentNote(sessionId, note) {
+  return fetchJSON(`/agent/sessions/${sessionId}/notes`, {
+    method: 'POST',
+    body: JSON.stringify({ note }),
+  })
+}

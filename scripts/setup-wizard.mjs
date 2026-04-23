@@ -82,17 +82,17 @@ let openaiKey = '', geminiKey = '', xaiKey = ''
 if (imageModel === 'openai') {
   openaiKey = await ask(() => p.password({
     message: 'OpenAI API key',
-    hint: 'platform.openai.com/api-keys',
+    hint: 'https://platform.openai.com/api-keys',
   }))
 } else if (imageModel === 'gemini') {
   geminiKey = await ask(() => p.password({
     message: 'Google Gemini API key',
-    hint: 'aistudio.google.com/apikey',
+    hint: 'https://aistudio.google.com/apikey',
   }))
 } else {
   xaiKey = await ask(() => p.password({
     message: 'xAI API key',
-    hint: 'console.x.ai',
+    hint: 'https://console.x.ai',
   }))
 }
 
@@ -110,17 +110,17 @@ let replicateKey = ''
 if (videoModel === 'veo' && !geminiKey) {
   geminiKey = await ask(() => p.password({
     message: 'Google Gemini API key',
-    hint: 'aistudio.google.com/apikey',
+    hint: 'https://aistudio.google.com/apikey',
   }))
 } else if (videoModel === 'seeddance') {
   replicateKey = await ask(() => p.password({
     message: 'Replicate API key',
-    hint: 'replicate.com/account/api-tokens',
+    hint: 'https://replicate.com/account/api-tokens',
   }))
 } else if (videoModel === 'grok-video' && !xaiKey) {
   xaiKey = await ask(() => p.password({
     message: 'xAI API key',
-    hint: 'console.x.ai',
+    hint: 'https://console.x.ai',
   }))
 }
 

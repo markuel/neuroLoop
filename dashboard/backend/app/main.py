@@ -1,9 +1,11 @@
 # dashboard/backend/app/main.py
 import asyncio
+import json
+import uuid
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, UploadFile, Request
+from fastapi import FastAPI, UploadFile, File, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel
@@ -17,7 +19,17 @@ from .storage import (
 )
 from .mesh import get_fsaverage5_mesh_binary
 from .predict import start_prediction, get_job, list_jobs, get_atlas_data, load_manifest
-from .agent import start_session, get_session, stop_session, list_sessions, tail_log, SESSIONS_DIR
+from .agent import (
+    start_session,
+    get_session,
+    stop_session,
+    list_sessions,
+    tail_log,
+    scan_artifacts,
+    create_draft_session,
+    append_user_note,
+    SESSIONS_DIR,
+)
 
 app = FastAPI(title="neuroLoop API")
 app.add_middleware(
@@ -215,14 +227,104 @@ def config():
 
 class AgentStartRequest(BaseModel):
     target_description: str
+    creative_brief: str = ""
     duration: int = 30
     max_iterations: int = 20
     target_score: float = 0.85
+    session_id: str | None = None  # if provided, reuses a draft session (with uploaded refs)
 
 @app.post("/api/agent/start")
 def agent_start(req: AgentStartRequest):
-    session_id = start_session(req.model_dump())
+    data = req.model_dump()
+    draft_id = data.pop("session_id", None)
+    session_id = start_session(data, session_id=draft_id)
     return {"session_id": session_id}
+
+
+@app.post("/api/agent/sessions/draft")
+def agent_create_draft():
+    """Create an empty session directory so the UI can upload reference images before starting."""
+    return {"session_id": create_draft_session()}
+
+
+@app.post("/api/agent/sessions/{session_id}/references")
+async def agent_upload_reference(session_id: str, file: UploadFile = File(...)):
+    session_dir = SESSIONS_DIR / session_id / "references"
+    if not session_dir.parent.exists():
+        raise HTTPException(status_code=404, detail="Session not found")
+    session_dir.mkdir(parents=True, exist_ok=True)
+    # Preserve original name but avoid path traversal
+    safe_name = (
+        file.filename.replace("/", "_").replace("\\", "_")
+        if file.filename
+        else f"ref_{uuid.uuid4().hex[:8]}.bin"
+    )
+    dest = session_dir / safe_name
+    dest.write_bytes(await file.read())
+    return {"name": safe_name}
+
+
+@app.delete("/api/agent/sessions/{session_id}/references/{name}")
+def agent_delete_reference(session_id: str, name: str):
+    p = SESSIONS_DIR / session_id / "references" / name
+    if p.exists():
+        p.unlink()
+    return {"ok": True}
+
+
+class NoteRequest(BaseModel):
+    note: str
+
+@app.post("/api/agent/sessions/{session_id}/notes")
+def agent_add_note(session_id: str, req: NoteRequest):
+    if not req.note.strip():
+        return {"ok": False}
+    append_user_note(session_id, req.note)
+    return {"ok": True}
+
+
+@app.get("/api/agent/sessions/{session_id}/artifact/{path:path}")
+def agent_artifact(session_id: str, path: str):
+    """Serve any file from inside the session directory (thumbnails, JSON, segment clips)."""
+    base = (SESSIONS_DIR / session_id).resolve()
+    target = (base / path).resolve()
+    try:
+        target.relative_to(base)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid path")
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=404, detail="Not found")
+    return FileResponse(str(target))
+
+
+@app.get("/api/agent/sessions/{session_id}/artifacts-stream")
+async def agent_artifacts_stream(session_id: str):
+    """SSE stream that emits every artifact currently on disk, then any new arrivals."""
+    async def event_generator():
+        seen: set[str] = set()
+        while True:
+            artifacts = scan_artifacts(session_id)
+            new_items = [a for a in artifacts if a["path"] not in seen]
+            for a in new_items:
+                seen.add(a["path"])
+                yield f"data: {json.dumps(a)}\n\n"
+            s = get_session(session_id)
+            if s and not s["is_running"]:
+                # One final pass after the process exits to catch anything flushed late
+                artifacts = scan_artifacts(session_id)
+                for a in artifacts:
+                    if a["path"] not in seen:
+                        seen.add(a["path"])
+                        yield f"data: {json.dumps(a)}\n\n"
+                yield "event: done\ndata: \n\n"
+                break
+            await asyncio.sleep(1.0)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 @app.get("/api/agent/sessions")
 def agent_sessions():

@@ -62,6 +62,14 @@ const useStore = create((set, get) => ({
   mesh: null,
   setMesh: (m) => set({ mesh: m }),
 
+  // Atlas — set once on app mount so the agent tab's brain heatmap can render
+  // region-based activations without needing a prediction job to populate them.
+  setAtlas: (atlas) => set({
+    fineGroups: atlas?.fine_groups ?? null,
+    coarseGroups: atlas?.coarse_groups ?? null,
+    regionVertices: atlas?.region_vertices ?? null,
+  }),
+
   // Predictions
   preds: null,           // Array of Float32Array, one per timestep
   regions: null,         // { regionName: [value_per_timestep] }
