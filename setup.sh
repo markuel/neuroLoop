@@ -60,6 +60,7 @@ else
   echo -e "  ${DIM}https://huggingface.co/facebook/tribev2${NC}"
   echo ""
   read -rsp "  Token: " HF_TOKEN
+  echo ""
   echo -e "  ${DIM}$(mask_key "$HF_TOKEN")${NC}"
   if [ -z "$HF_TOKEN" ]; then
     warn "No token entered — model download will fail. Re-run setup.sh --reconfigure to fix this."
@@ -102,6 +103,7 @@ else
   echo -e "  Get one at: ${DIM}https://console.anthropic.com/settings/keys${NC}"
   echo ""
   read -rsp "  Anthropic API key: " ANTHROPIC_API_KEY
+  echo ""
   echo -e "  ${DIM}$(mask_key "$ANTHROPIC_API_KEY")${NC}"
   if [ -z "$ANTHROPIC_API_KEY" ]; then
     warn "No key entered — the agent loop won't work. Re-run setup.sh --reconfigure to fix this."
@@ -129,6 +131,7 @@ else
       IMAGE_MODEL=openai
       echo ""
       read -rsp "  OpenAI API key: " OPENAI_API_KEY
+      echo ""
       echo -e "  ${DIM}$(mask_key "$OPENAI_API_KEY")${NC}"
       ok "Image model: GPT-image-2"
       ;;
@@ -136,6 +139,7 @@ else
       IMAGE_MODEL=gemini
       echo ""
       read -rsp "  Google Gemini API key: " GEMINI_API_KEY
+      echo ""
       echo -e "  ${DIM}$(mask_key "$GEMINI_API_KEY")${NC}"
       ok "Image model: Gemini 3.1 Flash Image"
       ;;
@@ -143,6 +147,7 @@ else
       IMAGE_MODEL=grok
       echo ""
       read -rsp "  xAI API key: " XAI_API_KEY
+      echo ""
       echo -e "  ${DIM}$(mask_key "$XAI_API_KEY")${NC}"
       ok "Image model: Grok Imagine Image"
       ;;
@@ -150,6 +155,7 @@ else
       IMAGE_MODEL=openai
       warn "Invalid choice — defaulting to OpenAI"
       read -rsp "  OpenAI API key: " OPENAI_API_KEY
+      echo ""
       echo -e "  ${DIM}$(mask_key "$OPENAI_API_KEY")${NC}"
       ;;
   esac
@@ -181,6 +187,7 @@ else
       VIDEO_MODEL=seeddance
       echo ""
       read -rsp "  Replicate API key: " REPLICATE_API_KEY
+      echo ""
       echo -e "  ${DIM}$(mask_key "$REPLICATE_API_KEY")${NC}"
       ok "Video model: Seedance 2.0"
       ;;
