@@ -72,13 +72,13 @@ function useJsonArtifact(sessionId, path) {
 }
 
 // ------------------------------------------------------------------
-// Keyframe + segment strip — thumbnails fill in as they land.
+// Keyframe + segment strip - thumbnails fill in as they land.
 // ------------------------------------------------------------------
 function KeyframeSegmentStrip({ sessionId, iterData, keyframesJson, segmentsJson }) {
   if (!keyframesJson?.keyframes?.length) {
     return (
       <div className="text-xs text-gray-600 py-6 text-center">
-        Waiting for keyframe plan…
+        Waiting for keyframe plan...
       </div>
     )
   }
@@ -98,7 +98,7 @@ function KeyframeSegmentStrip({ sessionId, iterData, keyframesJson, segmentsJson
     <div className="flex gap-2 overflow-x-auto pb-2">
       {keyframesJson.keyframes.map((kf, i) => {
         const imgPath = kfByIndex.get(kf.index ?? i)
-        const segPath = segByIndex.get(kf.index ?? i) // segment i connects frame i → i+1
+        const segPath = segByIndex.get(kf.index ?? i) // segment i connects frame i to i+1
         const seg = segmentsJson?.segments?.[i]
         const isLastFrame = i === keyframesJson.keyframes.length - 1
         return (
@@ -147,7 +147,7 @@ function KeyframeSegmentStrip({ sessionId, iterData, keyframesJson, segmentsJson
                 {seg && (
                   <>
                     <div className="text-[10px] text-blue-300 leading-tight line-clamp-2" title={seg.motion_prompt}>
-                      → {seg.motion_prompt}
+                      to {seg.motion_prompt}
                     </div>
                     {seg.camera_motion && (
                       <div className="text-[9px] text-gray-500 italic truncate">{seg.camera_motion}</div>
@@ -164,7 +164,7 @@ function KeyframeSegmentStrip({ sessionId, iterData, keyframesJson, segmentsJson
 }
 
 // ------------------------------------------------------------------
-// Score sparkline — tiny line chart of overall_score across iterations.
+// Score sparkline - tiny line chart of overall_score across iterations.
 // ------------------------------------------------------------------
 function ScoreSparkline({ iterations, target }) {
   if (!iterations?.length) return null
@@ -209,7 +209,7 @@ function ScoreSparkline({ iterations, target }) {
 }
 
 // ------------------------------------------------------------------
-// Final video panel — video player + per-segment score bars under it.
+// Final video panel - video player + per-segment score bars under it.
 // Clicking a bar seeks the video to that segment.
 // ------------------------------------------------------------------
 function FinalVideoPanel({ sessionId, finalPath, scoreJson, segmentsJson }) {
@@ -242,7 +242,7 @@ function FinalVideoPanel({ sessionId, finalPath, scoreJson, segmentsJson }) {
           <div className="flex gap-1">
             {segmentsJson.segments.map((seg, i) => {
               const score = scoreByIdx.get(i) ?? 0
-              const hue = Math.round(score * 120) // red → green
+              const hue = Math.round(score * 120) // red to green
               return (
                 <button
                   key={i}
@@ -305,7 +305,7 @@ export default function ArtifactCanvas({ sessionId, iteration, setIteration, ses
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      {/* Header — sparkline + iteration tabs */}
+      {/* Header - sparkline + iteration tabs */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800 flex-shrink-0">
         <ScoreSparkline iterations={iterations} target={sessionData?.params?.target_score ?? 0.85} />
         <div className="flex items-center gap-1">
@@ -328,7 +328,9 @@ export default function ArtifactCanvas({ sessionId, iteration, setIteration, ses
                 }`}
                 title={logEntry?.notes}
               >
-                {n}{logEntry?.score ? ` · ${logEntry.score.toFixed(2)}` : ''}
+                {n}
+                {logEntry?.status ? ` ${logEntry.status}` : ''}
+                {logEntry?.score ? ` ${logEntry.score.toFixed(2)}` : ''}
               </button>
             )
           })}
@@ -345,7 +347,7 @@ export default function ArtifactCanvas({ sessionId, iteration, setIteration, ses
         {cur ? (
           <>
             <section>
-              <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-2">Iteration {iteration} — keyframes & segments</h3>
+              <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-2">Iteration {iteration}: keyframes & segments</h3>
               <KeyframeSegmentStrip
                 sessionId={sessionId}
                 iterData={cur}
@@ -373,13 +375,13 @@ export default function ArtifactCanvas({ sessionId, iteration, setIteration, ses
                 <div className="grid grid-cols-3 gap-2 mt-3" style={{ height: 220 }}>
                   <BrainHeatmap activations={scoreJson.target_activations} title="Target" />
                   <BrainHeatmap activations={scoreJson.mean_activations} title="Actual" />
-                  <BrainHeatmap activations={scoreJson.region_deltas} title="Delta (actual − target)" mode="delta" />
+                  <BrainHeatmap activations={scoreJson.region_deltas} title="Delta (actual - target)" mode="delta" />
                 </div>
               </section>
             )}
           </>
         ) : (
-          <div className="text-gray-700 text-sm text-center py-10">Waiting for first artifact…</div>
+          <div className="text-gray-700 text-sm text-center py-10">Waiting for first artifact...</div>
         )}
       </div>
     </div>

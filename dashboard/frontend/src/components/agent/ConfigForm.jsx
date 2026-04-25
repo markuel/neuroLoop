@@ -110,7 +110,7 @@ export default function ConfigForm({ config, onStart }) {
           id={briefId}
           className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 resize-none focus:outline-none focus:border-red-500 transition"
           rows={3}
-          placeholder="What the video should actually be — e.g. 'action chase through a neon city starring the character in the reference photo, holding the product'"
+          placeholder="What the video should actually be, e.g. 'action chase through a neon city starring the character in the reference photo, holding the product'"
           value={form.creative_brief}
           onChange={e => set('creative_brief', e.target.value)}
         />
@@ -128,9 +128,9 @@ export default function ConfigForm({ config, onStart }) {
           className="w-full border border-dashed border-gray-700 rounded-lg px-3 py-4 text-xs text-gray-500 text-center cursor-pointer hover:border-gray-600 hover:text-gray-400 focus:outline-none focus:border-red-500 transition"
         >
           {uploading
-            ? 'Uploading…'
+            ? 'Uploading...'
             : refs.length
-              ? `${refs.length} reference image${refs.length === 1 ? '' : 's'} — drop or click to add more`
+              ? `${refs.length} reference image${refs.length === 1 ? '' : 's'} - drop or click to add more`
               : 'Drop images here (product photos, character refs, style refs)'}
         </button>
         <input
@@ -161,7 +161,7 @@ export default function ConfigForm({ config, onStart }) {
                   className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/70 text-gray-300 text-xs opacity-0 group-hover:opacity-100 transition"
                   aria-label={`Remove ${r.name}`}
                 >
-                  ×
+                  x
                 </button>
               </div>
             ))}
@@ -169,7 +169,7 @@ export default function ConfigForm({ config, onStart }) {
         )}
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         <div>
           <label htmlFor={durationId} className="block text-xs text-gray-400 mb-1.5">Duration</label>
           <select
@@ -193,15 +193,26 @@ export default function ConfigForm({ config, onStart }) {
             onChange={e => set('max_iterations', Number(e.target.value))}
           />
         </div>
-        <div>
-          <label htmlFor={targetScoreId} className="block text-xs text-gray-400 mb-1.5">Target</label>
-          <input
-            id={targetScoreId}
-            type="number" min={0} max={1} step={0.05}
-            className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-red-500"
-            value={form.target_score}
-            onChange={e => set('target_score', Number(e.target.value))}
-          />
+      </div>
+
+      <div>
+        <div className="mb-1.5 flex items-center justify-between gap-3">
+          <label htmlFor={targetScoreId} className="block text-xs text-gray-400">Target score</label>
+          <span className="font-mono text-xs text-gray-300">{form.target_score.toFixed(2)}</span>
+        </div>
+        <input
+          id={targetScoreId}
+          type="range"
+          min={0.5}
+          max={1}
+          step={0.01}
+          className="w-full accent-red-500"
+          value={form.target_score}
+          onChange={e => set('target_score', Number(e.target.value))}
+        />
+        <div className="mt-1 flex justify-between font-mono text-[10px] text-gray-600">
+          <span>0.50</span>
+          <span>1.00</span>
         </div>
       </div>
 
@@ -223,7 +234,7 @@ export default function ConfigForm({ config, onStart }) {
         disabled={starting || !form.target_description.trim()}
         className="self-start px-5 py-2 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed transition"
       >
-        {starting ? 'Starting…' : 'Start agent loop'}
+        {starting ? 'Starting...' : 'Start agent loop'}
       </button>
     </form>
   )
