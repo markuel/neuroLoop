@@ -14,21 +14,23 @@ function lineColor(text) {
 export default function LogFeed({ sessionId, isRunning }) {
   const [lines, setLines] = useState([])
   const [autoScroll, setAutoScroll] = useState(true)
+  const [errorState, setErrorState] = useState({ sessionId: null, message: null })
   const endRef = useRef(null)
   const containerRef = useRef(null)
 
   useEffect(() => {
-    if (!sessionId) { setLines([]); return }
-    setLines([])
-    setAutoScroll(true)
+    if (!sessionId) return
 
     const es = new EventSource(agentLogStreamUrl(sessionId))
+    es.onopen = () => setErrorState({ sessionId, message: null })
     es.onmessage = (e) => {
       const text = e.data
       if (text.trim()) setLines(prev => [...prev, text])
     }
     es.addEventListener('done', () => es.close())
-    es.onerror = () => es.close()
+    es.onerror = () => {
+      setErrorState({ sessionId, message: 'Agent log stream disconnected. Reconnecting...' })
+    }
     return () => es.close()
   }, [sessionId])
 
@@ -45,6 +47,8 @@ export default function LogFeed({ sessionId, isRunning }) {
   if (!sessionId) {
     return <div className="flex-1 flex items-center justify-center text-gray-700 text-xs">No session</div>
   }
+
+  const streamError = errorState.sessionId === sessionId ? errorState.message : null
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -70,6 +74,11 @@ export default function LogFeed({ sessionId, isRunning }) {
               {line}
             </div>
           ))
+        )}
+        {streamError && (
+          <div className="mt-2 rounded border border-red-500/30 bg-red-500/10 px-2 py-1 text-red-200" role="alert">
+            {streamError}
+          </div>
         )}
         <div ref={endRef} />
       </div>

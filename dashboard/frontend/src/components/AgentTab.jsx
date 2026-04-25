@@ -95,13 +95,22 @@ export default function AgentTab() {
   const [activeSessionId, setActiveSessionId] = useState(null)
   const [sessionData, setSessionData] = useState(null)
   const [selectedIteration, setSelectedIteration] = useState(null)
+  const [loadError, setLoadError] = useState(null)
   const pollRef = useRef(null)
 
   useEffect(() => {
-    getConfig().then(setConfig).catch(() => {})
+    getConfig()
+      .then(setConfig)
+      .catch((err) => {
+        console.warn('Failed to load agent config:', err)
+        setLoadError('Agent configuration could not be loaded.')
+      })
     getAgentSessions()
       .then(r => setPastSessions(r.sessions ?? []))
-      .catch(() => {})
+      .catch((err) => {
+        console.warn('Failed to load agent sessions:', err)
+        setLoadError('Past agent sessions could not be loaded.')
+      })
   }, [])
 
   useEffect(() => {
@@ -111,8 +120,12 @@ export default function AgentTab() {
       try {
         const data = await getAgentSession(activeSessionId)
         setSessionData(data)
+        setLoadError(null)
         if (!data.is_running) clearInterval(pollRef.current)
-      } catch {}
+      } catch (err) {
+        console.warn('Failed to refresh agent session:', err)
+        setLoadError('Live agent session status could not be refreshed.')
+      }
     }
     poll()
     pollRef.current = setInterval(poll, 3000)
@@ -121,18 +134,27 @@ export default function AgentTab() {
 
   const handleStart = async (form) => {
     const { session_id } = await startAgentSession(form)
+    setLoadError(null)
     setActiveSessionId(session_id)
     setSessionData(null)
     setSelectedIteration(null)
   }
 
   const handleStop = async () => {
-    if (activeSessionId) await stopAgentSession(activeSessionId)
+    if (!activeSessionId) return
+    try {
+      await stopAgentSession(activeSessionId)
+      setLoadError(null)
+    } catch (err) {
+      console.warn('Failed to stop agent session:', err)
+      setLoadError(err.message || 'Agent session could not be stopped.')
+    }
   }
 
   const handleSelectPast = (session) => {
     setActiveSessionId(session.session_id)
     setSessionData(session)
+    setLoadError(null)
     setSelectedIteration(null)
   }
 
@@ -142,6 +164,11 @@ export default function AgentTab() {
       {/* Left rail — config or live status + past sessions */}
       <div className="w-72 flex-shrink-0 border-r border-gray-800 flex flex-col overflow-y-auto">
         <div className="p-4 border-b border-gray-800">
+          {loadError && (
+            <p className="mb-3 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200" role="alert">
+              {loadError}
+            </p>
+          )}
           {activeSessionId && sessionData ? (
             <>
               <LiveSessionHeader session={sessionData} onStop={handleStop} />
@@ -200,7 +227,7 @@ export default function AgentTab() {
         {activeSessionId && (
           <UserNotes sessionId={activeSessionId} disabled={!sessionData?.is_running} />
         )}
-        <LogFeed sessionId={activeSessionId} isRunning={sessionData?.is_running ?? false} />
+        <LogFeed key={activeSessionId || 'no-session'} sessionId={activeSessionId} isRunning={sessionData?.is_running ?? false} />
       </div>
     </div>
   )

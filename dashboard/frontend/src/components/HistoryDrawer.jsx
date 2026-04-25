@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useId, useRef } from 'react'
 import { getRuns } from '../utils/api'
 
 function formatDuration(seconds) {
@@ -27,6 +27,9 @@ const TYPE_CHIP = {
 }
 
 export default function HistoryDrawer({ onClose, onSelect }) {
+  const titleId = useId()
+  const dialogRef = useRef(null)
+  const closeRef = useRef(null)
   const [runs, setRuns] = useState(null)
   const [error, setError] = useState(null)
 
@@ -36,16 +39,51 @@ export default function HistoryDrawer({ onClose, onSelect }) {
       .catch(e => setError(e.message))
   }, [])
 
+  useEffect(() => {
+    closeRef.current?.focus()
+
+    function handleKeyDown(e) {
+      if (e.key === 'Escape') onClose()
+      if (e.key !== 'Tab') return
+
+      const focusable = Array.from(
+        dialogRef.current?.querySelectorAll('button:not([disabled]), [tabindex]:not([tabindex="-1"])') ?? [],
+      ).filter((el) => el.offsetParent !== null)
+      if (focusable.length === 0) return
+
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
 
-      <div className="fixed right-0 top-0 h-full w-80 z-50 bg-gray-950 border-l border-gray-800 flex flex-col">
+      <div
+        ref={dialogRef}
+        className="fixed right-0 top-0 h-full w-80 z-50 bg-gray-950 border-l border-gray-800 flex flex-col"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+      >
         <div className="h-12 flex items-center justify-between px-4 border-b border-gray-800 shrink-0">
-          <span className="text-sm font-semibold text-gray-200">History</span>
+          <span id={titleId} className="text-sm font-semibold text-gray-200">History</span>
           <button
+            ref={closeRef}
             onClick={onClose}
             className="text-gray-500 hover:text-gray-200 transition text-xl leading-none"
+            aria-label="Close history"
           >
             ×
           </button>
@@ -69,10 +107,11 @@ export default function HistoryDrawer({ onClose, onSelect }) {
           )}
 
           {runs && runs.map(run => (
-            <div
+            <button
+              type="button"
               key={run.job_id}
               onClick={() => onSelect?.(run.job_id)}
-              className="flex gap-3 px-4 py-3 border-b border-gray-800/50 hover:bg-gray-900 transition cursor-pointer"
+              className="w-full flex gap-3 px-4 py-3 border-b border-gray-800/50 hover:bg-gray-900 focus:bg-gray-900 focus:outline-none transition cursor-pointer text-left"
             >
               <div className="w-16 h-10 shrink-0 rounded bg-gray-800 overflow-hidden">
                 {run.thumbnail_url ? (
@@ -100,7 +139,7 @@ export default function HistoryDrawer({ onClose, onSelect }) {
                 </div>
                 <p className="text-[10px] text-gray-600 mt-0.5">{formatDate(run.timestamp)}</p>
               </div>
-            </div>
+            </button>
           ))}
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useMemo } from 'react'
 import useStore from '../stores/useStore'
 
 const COARSE_COLORS = {
@@ -227,19 +227,12 @@ export default function RegionPanel() {
 
   const scaleMax = globalVmax || 1
 
-  // Throttle the sort to ~4 updates/sec during playback
-  const [entries, setEntries] = useState([])
-  useEffect(() => {
-    if (!regions) { setEntries([]); return }
-    const id = setTimeout(() => {
-      setEntries(
-        Object.entries(regions)
-          .map(([name, values]) => ({ name, value: values[timestep] ?? 0 }))
-          .sort((a, b) => b.value - a.value)
-      )
-    }, isPlaying ? 250 : 0)
-    return () => clearTimeout(id)
-  }, [regions, timestep, isPlaying])
+  const entries = useMemo(() => {
+    if (!regions) return []
+    return Object.entries(regions)
+      .map(([name, values]) => ({ name, value: values[timestep] ?? 0 }))
+      .sort((a, b) => b.value - a.value)
+  }, [regions, timestep])
 
   if (!regions) {
     return (
@@ -268,7 +261,7 @@ export default function RegionPanel() {
       {/* Two-column scrollable grid */}
       <div className="flex-1 overflow-y-auto px-3 py-2">
         <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
-          {entries.map(({ name, value }, i) => {
+          {entries.map(({ name, value }) => {
             const coarse = coarseGroups?.[name] || ''
             const color = COARSE_COLORS[coarse] || '#6b7280'
             const pct = Math.max(0, Math.min(100, (value / scaleMax) * 100))
@@ -276,25 +269,24 @@ export default function RegionPanel() {
             const isSelected = selectedRegion === name
 
             // Split description at " — " to show function part prominently
-            let label, detail
+            let label
             if (desc && desc.includes(' — ')) {
               const idx = desc.indexOf(' — ')
               label = desc.slice(idx + 3)   // function part (after —)
-              detail = desc.slice(0, idx)    // anatomy part (before —)
             } else {
               label = desc || name
-              detail = null
             }
 
+            const Row = clickable ? 'button' : 'div'
+
             return (
-              <div
+              <Row
                 key={name}
-                onClick={() => {
-                  if (!clickable) return
-                  setSelectedRegion(isSelected ? null : name)
-                }}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded transition-colors ${
-                  clickable ? 'cursor-pointer hover:bg-gray-800/60' : ''
+                type={clickable ? 'button' : undefined}
+                onClick={clickable ? () => setSelectedRegion(isSelected ? null : name) : undefined}
+                aria-pressed={clickable ? isSelected : undefined}
+                className={`w-full flex items-center gap-1.5 px-2 py-1 rounded transition-colors text-left ${
+                  clickable ? 'cursor-pointer hover:bg-gray-800/60 focus:bg-gray-800/60 focus:outline-none' : ''
                 } ${isSelected ? 'bg-gray-800 ring-1 ring-red-500/40' : ''}`}
               >
                 {/* Color dot */}
@@ -325,7 +317,7 @@ export default function RegionPanel() {
                     {pct.toFixed(0)}%
                   </span>
                 </div>
-              </div>
+              </Row>
             )
           })}
         </div>
