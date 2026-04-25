@@ -179,6 +179,12 @@ function CameraFocus({ controlsRef }) {
 
 export default function BrainViewer() {
   const controlsRef = useRef()
+  const preds = useStore((s) => s.preds)
+  const timestep = useStore((s) => s.timestep)
+  const timestepFrac = useStore((s) => s.timestepFrac)
+  const globalVmin = useStore((s) => s.globalVmin)
+  const globalVmax = useStore((s) => s.globalVmax)
+  const smoothFrame = preds ? Math.min(preds.length - 1, timestep + timestepFrac) : 0
 
   return (
     <div className="w-full h-full bg-gray-900 rounded-lg overflow-hidden relative">
@@ -187,6 +193,24 @@ export default function BrainViewer() {
         <div><span className="text-red-400 font-semibold">A</span>nterior / <span className="text-red-400 font-semibold">P</span>osterior</div>
         <div><span className="text-red-400 font-semibold">S</span>uperior / <span className="text-red-400 font-semibold">I</span>nferior</div>
       </div>
+      {preds && (
+        <div className="absolute bottom-4 left-4 z-10 w-56 rounded-md border border-gray-800 bg-gray-950/80 px-3 py-2 text-xs text-gray-300 backdrop-blur-sm pointer-events-none">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[10px] uppercase tracking-wider text-gray-500">Activation</span>
+            <span className="font-mono text-[10px] text-gray-400">Frame {smoothFrame.toFixed(2)}</span>
+          </div>
+          <div
+            className="mt-2 h-2 rounded-full border border-gray-700"
+            style={{
+              background: 'linear-gradient(90deg, rgb(107,107,107) 0%, rgb(107,107,107) 58%, rgb(210,83,65) 70%, rgb(255,166,42) 85%, rgb(255,255,255) 100%)',
+            }}
+          />
+          <div className="mt-1 flex justify-between font-mono text-[10px] text-gray-500">
+            <span>{globalVmin.toFixed(2)}</span>
+            <span>{globalVmax.toFixed(2)}</span>
+          </div>
+        </div>
+      )}
       <Canvas
         camera={{
           position: [-180, -30, 100],

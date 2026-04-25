@@ -2,7 +2,20 @@ import { useRef, useState } from 'react'
 import UploadModal from './UploadModal'
 import HistoryDrawer from './HistoryDrawer'
 
-export default function TopBar({ activeTab, onTabChange, onLoadJob }) {
+const WORKSPACES = [
+  {
+    id: 'analyze',
+    label: 'Analyze Stimulus',
+    description: 'Inspect predicted brain activity for media or text',
+  },
+  {
+    id: 'generate',
+    label: 'Generate Video',
+    description: 'Run the agent loop toward a target brain state',
+  },
+]
+
+export default function TopBar({ activeWorkspace, onWorkspaceChange, onLoadJob }) {
   const [modalOpen, setModalOpen] = useState(false)
   const [modalMode, setModalMode] = useState('file')
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -26,34 +39,31 @@ export default function TopBar({ activeTab, onTabChange, onLoadJob }) {
 
   return (
     <>
-      <div className="h-12 bg-gray-950 border-b border-gray-800 flex items-center justify-between px-4">
+      <div className="h-14 bg-gray-950 border-b border-gray-800 flex items-center justify-between px-4">
         <div className="flex items-center gap-4">
-          <span className="text-lg font-bold text-red-500">neuroLoop</span>
-          <div className="flex gap-1">
-            <button
-              onClick={() => onTabChange('analyze')}
-              className={`px-3 py-1 text-sm rounded-md transition ${
-                activeTab === 'analyze'
-                  ? 'bg-gray-800 text-white'
-                  : 'text-gray-500 hover:text-gray-300'
-              }`}
-            >
-              Analyze
-            </button>
-            <button
-              onClick={() => onTabChange('agent')}
-              className={`px-3 py-1 text-sm rounded-md transition ${
-                activeTab === 'agent'
-                  ? 'bg-gray-800 text-white'
-                  : 'text-gray-500 hover:text-gray-300'
-              }`}
-            >
-              Agent
-            </button>
+          <div className="flex items-baseline gap-2">
+            <span className="text-lg font-bold text-red-500">neuroLoop</span>
+            <span className="text-[10px] uppercase tracking-[0.22em] text-gray-600">brain-state studio</span>
+          </div>
+          <div className="flex gap-1 rounded-lg border border-gray-800 bg-gray-900/60 p-1">
+            {WORKSPACES.map((workspace) => (
+              <button
+                key={workspace.id}
+                onClick={() => onWorkspaceChange(workspace.id)}
+                className={`px-3 py-1.5 text-left rounded-md transition ${
+                  activeWorkspace === workspace.id
+                    ? 'bg-gray-800 text-white shadow-sm'
+                    : 'text-gray-500 hover:text-gray-300'
+                }`}
+                title={workspace.description}
+              >
+                <span className="block text-xs font-medium leading-tight">{workspace.label}</span>
+              </button>
+            ))}
           </div>
         </div>
 
-        {activeTab === 'analyze' && (
+        {activeWorkspace === 'analyze' && (
           <div className="flex gap-2">
             <button
               ref={historyButtonRef}
