@@ -6,13 +6,12 @@ import useStore from '../stores/useStore'
 import { activationsToColors, BRAIN_GRAY_R, BRAIN_GRAY_G, BRAIN_GRAY_B } from '../utils/colorscale'
 
 function BrainMesh() {
-  const meshRef = useRef()
   const mesh = useStore((s) => s.mesh)
   const colorsRef = useRef(null)
-  const lerpBufRef = useRef(null) // preallocated buffer for interpolated activations
+  const lerpBufRef = useRef(null)
   const geoRef = useRef(null)
 
-  const geometry = useMemo(() => {
+  const geometryData = useMemo(() => {
     if (!mesh) return null
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.Float32BufferAttribute(mesh.vertices, 3))
@@ -25,33 +24,37 @@ function BrainMesh() {
       colors[i * 3 + 1] = BRAIN_GRAY_G
       colors[i * 3 + 2] = BRAIN_GRAY_B
     }
-    colorsRef.current = colors
-    lerpBufRef.current = new Float32Array(mesh.nVertices)
+    const lerpBuf = new Float32Array(mesh.nVertices)
     geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
-    geoRef.current = geo
-    return geo
+    return { geo, colors, lerpBuf }
   }, [mesh])
+
+  useEffect(() => {
+    colorsRef.current = geometryData?.colors ?? null
+    lerpBufRef.current = geometryData?.lerpBuf ?? null
+    geoRef.current = geometryData?.geo ?? null
+  }, [geometryData])
 
   // Update colors in the render loop — reads ALL state from store to avoid stale closures
   useFrame(() => {
     const geo = geoRef.current
-    if (!geo || !colorsRef.current) return
+    const colors = colorsRef.current
+    const lerpBuf = lerpBufRef.current
+    if (!geo || !colors || !lerpBuf) return
     const { preds, timestep, timestepFrac, globalVmin, globalVmax, selectedRegion, regionVertices } = useStore.getState()
     if (!preds) return
     const frameA = preds[timestep]
     if (!frameA) return
 
-    const colors = colorsRef.current
     const frameB = preds[timestep + 1]
 
     // Interpolate between adjacent timesteps for smooth transitions
     if (timestepFrac > 0 && frameB) {
-      const buf = lerpBufRef.current
       const invFrac = 1 - timestepFrac
       for (let i = 0, n = frameA.length; i < n; i++) {
-        buf[i] = frameA[i] * invFrac + frameB[i] * timestepFrac
+        lerpBuf[i] = frameA[i] * invFrac + frameB[i] * timestepFrac
       }
-      activationsToColors(buf, globalVmin, globalVmax, colors)
+      activationsToColors(lerpBuf, globalVmin, globalVmax, colors)
     } else {
       activationsToColors(frameA, globalVmin, globalVmax, colors)
     }
@@ -69,10 +72,10 @@ function BrainMesh() {
     geo.attributes.color.needsUpdate = true
   })
 
-  if (!geometry) return null
+  if (!geometryData) return null
 
   return (
-    <mesh ref={meshRef} geometry={geometry}>
+    <mesh geometry={geometryData.geo}>
       <meshStandardMaterial vertexColors side={THREE.DoubleSide} />
     </mesh>
   )

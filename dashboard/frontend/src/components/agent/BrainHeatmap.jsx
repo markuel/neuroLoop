@@ -1,5 +1,5 @@
 import { useRef, useMemo, useEffect } from 'react'
-import { Canvas, useFrame } from '@react-three/fiber'
+import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 import useStore from '../../stores/useStore'
@@ -26,7 +26,7 @@ function HeatmapMesh({ activations, mode }) {
   const geoRef = useRef(null)
   const colorsRef = useRef(null)
 
-  const geometry = useMemo(() => {
+  const geometryData = useMemo(() => {
     if (!mesh) return null
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.Float32BufferAttribute(mesh.vertices, 3))
@@ -39,10 +39,13 @@ function HeatmapMesh({ activations, mode }) {
       colors[i * 3 + 2] = BRAIN_GRAY_B
     }
     geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
-    colorsRef.current = colors
-    geoRef.current = geo
-    return geo
+    return { geo, colors }
   }, [mesh])
+
+  useEffect(() => {
+    colorsRef.current = geometryData?.colors ?? null
+    geoRef.current = geometryData?.geo ?? null
+  }, [geometryData])
 
   useEffect(() => {
     if (!geoRef.current || !colorsRef.current || !mesh || !regionVertices || !activations) return
@@ -67,11 +70,11 @@ function HeatmapMesh({ activations, mode }) {
     }
     activationsToColors(verts, vmin, vmax, colorsRef.current)
     geoRef.current.attributes.color.needsUpdate = true
-  }, [activations, regionVertices, mesh, mode])
+  }, [activations, regionVertices, mesh, mode, geometryData])
 
-  if (!geometry) return null
+  if (!geometryData) return null
   return (
-    <mesh geometry={geometry}>
+    <mesh geometry={geometryData.geo}>
       <meshStandardMaterial vertexColors side={THREE.DoubleSide} />
     </mesh>
   )
