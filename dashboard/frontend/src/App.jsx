@@ -10,8 +10,51 @@ import { getMesh, getAtlas, getResults } from './utils/api'
 const AgentTab = lazy(() => import('./components/AgentTab'))
 const BrainViewer = lazy(() => import('./components/BrainViewer'))
 
+function StatusPill({ label, value, tone = 'muted' }) {
+  const tones = {
+    ok: 'border-green-500/30 bg-green-500/10 text-green-300',
+    warn: 'border-yellow-500/30 bg-yellow-500/10 text-yellow-300',
+    error: 'border-red-500/30 bg-red-500/10 text-red-300',
+    muted: 'border-gray-800 bg-gray-900 text-gray-500',
+  }
+  return (
+    <div className={`rounded-md border px-2.5 py-1.5 ${tones[tone]}`}>
+      <span className="text-[10px] uppercase tracking-wider opacity-70">{label}</span>
+      <span className="ml-2 text-xs font-medium">{value}</span>
+    </div>
+  )
+}
+
+function AnalyzeStatusStrip() {
+  const inputType = useStore((s) => s.inputType)
+  const mesh = useStore((s) => s.mesh)
+  const preds = useStore((s) => s.preds)
+  const regions = useStore((s) => s.regions)
+  const regionVertices = useStore((s) => s.regionVertices)
+  const timestep = useStore((s) => s.timestep)
+  const timestepFrac = useStore((s) => s.timestepFrac)
+  const currentTime = useStore((s) => s.currentTime)
+  const duration = useStore((s) => s.duration)
+  const globalVmin = useStore((s) => s.globalVmin)
+  const globalVmax = useStore((s) => s.globalVmax)
+
+  const smoothFrame = preds ? Math.min(preds.length - 1, timestep + timestepFrac) : 0
+  return (
+    <div className="h-12 border-b border-gray-800 bg-gray-950/95 px-4 flex items-center gap-2 overflow-x-auto">
+      <StatusPill label="Input" value={inputType ? inputType.toUpperCase() : 'None'} tone={inputType ? 'ok' : 'muted'} />
+      <StatusPill label="Brain Mesh" value={mesh ? `${mesh.nVertices.toLocaleString()} vertices` : 'Loading'} tone={mesh ? 'ok' : 'warn'} />
+      <StatusPill label="Predictions" value={preds ? `${preds.length} frames` : 'Not loaded'} tone={preds ? 'ok' : 'muted'} />
+      <StatusPill label="Atlas" value={regionVertices ? `${Object.keys(regionVertices).length} regions` : 'Loading'} tone={regionVertices ? 'ok' : 'warn'} />
+      <StatusPill label="Regions" value={regions ? 'Ready' : 'Waiting'} tone={regions ? 'ok' : 'muted'} />
+      <StatusPill label="Time" value={`${currentTime.toFixed(1)}s / ${(duration || 0).toFixed(1)}s`} tone={duration > 0 ? 'ok' : 'muted'} />
+      <StatusPill label="Brain Frame" value={preds ? smoothFrame.toFixed(2) : '--'} tone={preds ? 'ok' : 'muted'} />
+      <StatusPill label="Scale" value={preds ? `${globalVmin.toFixed(2)}..${globalVmax.toFixed(2)}` : '--'} tone={preds ? 'ok' : 'muted'} />
+    </div>
+  )
+}
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState('analyze')
+  const [activeWorkspace, setActiveWorkspace] = useState('analyze')
   const mesh = useStore((s) => s.mesh)
   const setMesh = useStore((s) => s.setMesh)
   const inputType = useStore((s) => s.inputType)
@@ -65,7 +108,13 @@ export default function App() {
 
     const atlas = atlasRef.current || {}
 
-    setInput(metaResp.input_type, null, null)
+    const currentInput = useStore.getState()
+    const preserveCurrentInput = currentInput.inputType === metaResp.input_type
+    setInput(
+      metaResp.input_type,
+      preserveCurrentInput ? currentInput.mediaUrl : null,
+      preserveCurrentInput ? currentInput.textContent : null,
+    )
     setPredictions({
       preds,
       regions: regionsResp.regions,
@@ -161,8 +210,8 @@ export default function App() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-950 text-white">
-      <TopBar activeTab={activeTab} onTabChange={setActiveTab} onLoadJob={loadJob} />
-      {activeTab === 'agent' && (
+      <TopBar activeWorkspace={activeWorkspace} onWorkspaceChange={setActiveWorkspace} onLoadJob={loadJob} />
+      {activeWorkspace === 'generate' && (
         <Suspense
           fallback={
             <div className="flex-1 flex items-center justify-center text-gray-600 text-sm">
@@ -174,7 +223,8 @@ export default function App() {
         </Suspense>
       )}
 
-      <div className={`flex-1 flex flex-col min-h-0 ${activeTab === 'agent' ? 'hidden' : ''}`}>
+      <div className={`flex-1 flex flex-col min-h-0 ${activeWorkspace === 'generate' ? 'hidden' : ''}`}>
+      <AnalyzeStatusStrip />
       <div className="flex-1 flex min-h-0 relative">
         {/* Processing overlay */}
         {jobStatus === 'processing' && (

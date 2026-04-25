@@ -67,7 +67,7 @@ export default function LogFeed({ sessionId, isRunning }) {
         className="flex-1 overflow-y-auto px-3 py-2 font-mono text-[10px] leading-tight"
       >
         {lines.length === 0 ? (
-          <span className="text-gray-700">Waiting for output…</span>
+          <span className="text-gray-700">Waiting for output...</span>
         ) : (
           lines.map((line, i) => (
             <div key={i} className={`whitespace-pre-wrap break-all ${lineColor(line)}`}>
