@@ -14,34 +14,33 @@ export default function Timeline() {
   const setCurrentTime = useStore((s) => s.setCurrentTime)
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0
-
-  function handleScrub(e) {
-    const rect = e.currentTarget.getBoundingClientRect()
-    const x = (e.clientX - rect.left) / rect.width
-    setCurrentTime(x * duration)
-  }
+  const clampedTime = duration > 0 ? Math.min(currentTime, duration) : 0
 
   return (
     <div className="h-10 bg-gray-950 border-t border-b border-gray-800 flex items-center gap-3 px-4">
       <button
         onClick={togglePlaying}
         className="text-white hover:text-red-400 transition text-sm w-6"
+        aria-label={isPlaying ? 'Pause playback' : 'Play playback'}
       >
         {isPlaying ? '⏸' : '▶'}
       </button>
       <span className="text-xs text-gray-500 w-10 text-right">{formatTime(currentTime)}</span>
-      <div
-        className="flex-1 h-1 bg-gray-800 rounded cursor-pointer relative"
-        onClick={handleScrub}
-      >
-        <div
-          className="h-full rounded"
-          style={{
-            width: `${progress}%`,
-            background: 'linear-gradient(90deg, #e94560, #533483)',
-          }}
-        />
-      </div>
+      <input
+        type="range"
+        min="0"
+        max={duration || 0}
+        step="0.01"
+        value={clampedTime}
+        disabled={duration <= 0}
+        onChange={(e) => setCurrentTime(Number(e.target.value))}
+        aria-label="Seek playback"
+        aria-valuetext={`${formatTime(clampedTime)} of ${formatTime(duration)}`}
+        className="flex-1 h-1 rounded cursor-pointer accent-red-500 disabled:cursor-default"
+        style={{
+          background: `linear-gradient(90deg, #e94560 0%, #533483 ${progress}%, #1f2937 ${progress}%, #1f2937 100%)`,
+        }}
+      />
       <span className="text-xs text-gray-500 w-10">{formatTime(duration)}</span>
     </div>
   )

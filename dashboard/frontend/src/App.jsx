@@ -1,13 +1,14 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { lazy, Suspense, useState, useEffect, useRef, useCallback } from 'react'
 import TopBar from './components/TopBar'
-import AgentTab from './components/AgentTab'
 import VideoPlayer from './components/VideoPlayer'
 import TextDisplay from './components/TextDisplay'
-import BrainViewer from './components/BrainViewer'
 import Timeline from './components/Timeline'
 import RegionPanel from './components/RegionPanel'
 import useStore from './stores/useStore'
 import { getMesh, getAtlas, getResults } from './utils/api'
+
+const AgentTab = lazy(() => import('./components/AgentTab'))
+const BrainViewer = lazy(() => import('./components/BrainViewer'))
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('analyze')
@@ -17,6 +18,7 @@ export default function App() {
   const jobId = useStore((s) => s.jobId)
   const jobStatus = useStore((s) => s.jobStatus)
   const jobProgress = useStore((s) => s.jobProgress)
+  const jobError = useStore((s) => s.jobError)
   const setJob = useStore((s) => s.setJob)
   const setPredictions = useStore((s) => s.setPredictions)
   const setDuration = useStore((s) => s.setDuration)
@@ -76,7 +78,7 @@ export default function App() {
       hemodynamicLag: metaResp.hemodynamic_lag,
     })
     setDuration(metaResp.duration_seconds)
-    setJob({ jobId, jobStatus: 'done', jobProgress: 1 })
+    setJob({ jobId, jobStatus: 'done', jobProgress: 1, jobError: null })
   }, [setInput, setPredictions, setDuration, setJob])
 
   // Load a past job from history into the viewer
@@ -98,16 +100,38 @@ export default function App() {
       try {
         const res = await getResults(jobId)
         if (res.status === 'done') {
-          await applyJobResults(res, jobId)
+          try {
+            await applyJobResults(res, jobId)
+          } catch (err) {
+            console.error('Failed to load job results:', err)
+            setJob({
+              jobStatus: 'error',
+              jobError: `Prediction finished, but the result files could not be loaded. ${err.message}`,
+            })
+          }
           clearInterval(interval)
         } else if (res.status === 'error') {
-          setJob({ jobStatus: 'error' })
+          setJob({
+            jobStatus: 'error',
+            jobError: res.error || 'Prediction failed before results were produced.',
+          })
           clearInterval(interval)
+        } else if (res.status === 'processing') {
+          setJob({ jobProgress: res.progress ?? useStore.getState().jobProgress })
         } else {
-          setJob({ jobProgress: res.progress })
+          setJob({
+            jobStatus: 'error',
+            jobError: `Unexpected job status: ${res.status || 'unknown'}.`,
+          })
+          clearInterval(interval)
         }
       } catch (err) {
         console.error('Poll error:', err)
+        setJob({
+          jobStatus: 'error',
+          jobError: `Could not check prediction status. ${err.message}`,
+        })
+        clearInterval(interval)
       }
     }, 2000)
     return () => clearInterval(interval)
@@ -138,13 +162,26 @@ export default function App() {
   return (
     <div className="h-screen flex flex-col bg-gray-950 text-white">
       <TopBar activeTab={activeTab} onTabChange={setActiveTab} onLoadJob={loadJob} />
-      {activeTab === 'agent' && <AgentTab />}
+      {activeTab === 'agent' && (
+        <Suspense
+          fallback={
+            <div className="flex-1 flex items-center justify-center text-gray-600 text-sm">
+              Loading agent workspace...
+            </div>
+          }
+        >
+          <AgentTab />
+        </Suspense>
+      )}
 
       <div className={`flex-1 flex flex-col min-h-0 ${activeTab === 'agent' ? 'hidden' : ''}`}>
       <div className="flex-1 flex min-h-0 relative">
         {/* Processing overlay */}
         {jobStatus === 'processing' && (
-          <div className="absolute inset-0 z-10 bg-gray-950/80 flex flex-col items-center justify-center gap-6">
+          <div
+            className="absolute inset-0 z-10 bg-gray-950/80 flex flex-col items-center justify-center gap-6"
+            aria-live="polite"
+          >
             <div className="relative w-24 h-24">
               <div className="absolute inset-0 rounded-full border-2 border-gray-700" />
               <div
@@ -167,6 +204,11 @@ export default function App() {
             </div>
             <div className="w-64 h-1.5 bg-gray-800 rounded-full overflow-hidden">
               <div
+                role="progressbar"
+                aria-label="Prediction progress"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(jobProgress * 100)}
                 className="h-full rounded-full transition-all duration-700 ease-out"
                 style={{
                   width: `${jobProgress * 100}%`,
@@ -177,11 +219,43 @@ export default function App() {
           </div>
         )}
 
+        {jobStatus === 'error' && (
+          <div className="absolute inset-0 z-10 bg-gray-950/85 flex items-center justify-center px-6" role="alert">
+            <div className="w-full max-w-md border border-red-500/30 bg-gray-900 rounded-lg p-5 shadow-2xl">
+              <p className="text-sm font-semibold text-red-300">Prediction stopped</p>
+              <p className="mt-2 text-sm text-gray-300 leading-6">
+                {jobError || 'Something went wrong while processing this input.'}
+              </p>
+              {jobId && (
+                <p className="mt-3 text-xs text-gray-600 font-mono break-all">
+                  Job {jobId}
+                </p>
+              )}
+              <div className="mt-5 flex justify-end">
+                <button
+                  onClick={reset}
+                  className="px-3 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 rounded-md transition"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="w-1/2 border-r border-gray-800">
           {inputType === 'text' ? <TextDisplay /> : <VideoPlayer />}
         </div>
         <div className="w-1/2">
-          <BrainViewer />
+          <Suspense
+            fallback={
+              <div className="w-full h-full bg-gray-900 flex items-center justify-center text-gray-600 text-sm">
+                Loading brain viewer...
+              </div>
+            }
+          >
+            <BrainViewer />
+          </Suspense>
         </div>
       </div>
 

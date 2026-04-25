@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import UploadModal from './UploadModal'
 import HistoryDrawer from './HistoryDrawer'
 
@@ -6,6 +6,23 @@ export default function TopBar({ activeTab, onTabChange, onLoadJob }) {
   const [modalOpen, setModalOpen] = useState(false)
   const [modalMode, setModalMode] = useState('file')
   const [historyOpen, setHistoryOpen] = useState(false)
+  const fileButtonRef = useRef(null)
+  const textButtonRef = useRef(null)
+  const historyButtonRef = useRef(null)
+
+  const restoreFocus = (ref) => {
+    window.requestAnimationFrame(() => ref.current?.focus())
+  }
+
+  const closeModal = () => {
+    setModalOpen(false)
+    restoreFocus(modalMode === 'file' ? fileButtonRef : textButtonRef)
+  }
+
+  const closeHistory = () => {
+    setHistoryOpen(false)
+    restoreFocus(historyButtonRef)
+  }
 
   return (
     <>
@@ -39,8 +56,12 @@ export default function TopBar({ activeTab, onTabChange, onLoadJob }) {
         {activeTab === 'analyze' && (
           <div className="flex gap-2">
             <button
+              ref={historyButtonRef}
               onClick={() => setHistoryOpen(true)}
               className="px-3 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 rounded-md transition"
+              aria-label="Open analysis history"
+              aria-haspopup="dialog"
+              aria-expanded={historyOpen}
               title="History"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -49,14 +70,20 @@ export default function TopBar({ activeTab, onTabChange, onLoadJob }) {
               </svg>
             </button>
             <button
+              ref={fileButtonRef}
               onClick={() => { setModalMode('file'); setModalOpen(true) }}
               className="px-3 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 rounded-md transition"
+              aria-haspopup="dialog"
+              aria-expanded={modalOpen && modalMode === 'file'}
             >
               Upload Video
             </button>
             <button
+              ref={textButtonRef}
               onClick={() => { setModalMode('text'); setModalOpen(true) }}
               className="px-3 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 rounded-md transition"
+              aria-haspopup="dialog"
+              aria-expanded={modalOpen && modalMode === 'text'}
             >
               Paste Text
             </button>
@@ -65,12 +92,12 @@ export default function TopBar({ activeTab, onTabChange, onLoadJob }) {
       </div>
 
       {modalOpen && (
-        <UploadModal mode={modalMode} onClose={() => setModalOpen(false)} />
+        <UploadModal mode={modalMode} onClose={closeModal} />
       )}
       {historyOpen && (
         <HistoryDrawer
-          onClose={() => setHistoryOpen(false)}
-          onSelect={(jobId) => { onLoadJob?.(jobId); setHistoryOpen(false) }}
+          onClose={closeHistory}
+          onSelect={(jobId) => { onLoadJob?.(jobId); closeHistory() }}
         />
       )}
     </>

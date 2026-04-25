@@ -32,7 +32,8 @@ def _read_manifest_raw() -> list[dict]:
             tmp_path = str(Path(tmpdir) / "manifest.json")
             storage.download_file(_MANIFEST_KEY, tmp_path)
             return json.loads(Path(tmp_path).read_text())
-    except Exception:
+    except Exception as exc:
+        logger.warning("Manifest read failed; starting with empty history: %s", exc)
         return []
 
 
@@ -218,9 +219,13 @@ def _run_prediction(job_id: str) -> None:
             # Upload all result files in parallel (significant for S3 mode)
             from concurrent.futures import ThreadPoolExecutor
             with ThreadPoolExecutor(max_workers=3) as pool:
-                pool.submit(storage.upload_bytes, preds_bytes, f"{prefix}/preds.bin", "application/octet-stream")
-                pool.submit(storage.upload_bytes, regions_bytes, f"{prefix}/regions.json", "application/json")
-                pool.submit(storage.upload_bytes, meta_bytes, f"{prefix}/meta.json", "application/json")
+                futures = [
+                    pool.submit(storage.upload_bytes, preds_bytes, f"{prefix}/preds.bin", "application/octet-stream"),
+                    pool.submit(storage.upload_bytes, regions_bytes, f"{prefix}/regions.json", "application/json"),
+                    pool.submit(storage.upload_bytes, meta_bytes, f"{prefix}/meta.json", "application/json"),
+                ]
+                for future in futures:
+                    future.result()
 
             job["n_timesteps"] = meta["n_timesteps"]
             job["meta_cache"] = meta
@@ -241,8 +246,7 @@ def _run_prediction(job_id: str) -> None:
             })
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("Prediction job %s failed", job_id)
         job["status"] = "error"
         job["error"] = str(e)
 

@@ -8,18 +8,20 @@ import BrainHeatmap from './BrainHeatmap'
 //                               finalMp4, keyframes: [path], segments: [path] } }
 // ------------------------------------------------------------------
 function useArtifacts(sessionId) {
-  const [byIter, setByIter] = useState({})
+  const [artifactState, setArtifactState] = useState({ sessionId: null, byIter: {} })
+  const [errorState, setErrorState] = useState({ sessionId: null, message: null })
 
   useEffect(() => {
-    setByIter({})
     if (!sessionId) return
 
     const es = new EventSource(agentArtifactsStreamUrl(sessionId))
+    es.onopen = () => setErrorState({ sessionId, message: null })
     es.onmessage = (e) => {
       try {
         const a = JSON.parse(e.data)
-        setByIter(prev => {
-          const cur = prev[a.iteration] || { keyframes: [], segments: [] }
+        setArtifactState(prev => {
+          const prevByIter = prev.sessionId === sessionId ? prev.byIter : {}
+          const cur = prevByIter[a.iteration] || { keyframes: [], segments: [] }
           const next = { ...cur }
           if (a.kind === 'keyframe') {
             if (!next.keyframes.includes(a.path)) next.keyframes = [...next.keyframes, a.path].sort()
@@ -29,32 +31,44 @@ function useArtifacts(sessionId) {
           else if (a.kind === 'segments.json') next.segmentsJson = a.path
           else if (a.kind === 'score.json') next.scoreJson = a.path
           else if (a.kind === 'final.mp4') next.finalMp4 = a.path
-          return { ...prev, [a.iteration]: next }
+          return { sessionId, byIter: { ...prevByIter, [a.iteration]: next } }
         })
-      } catch {}
+      } catch (err) {
+        console.warn('Ignoring malformed artifact stream event:', err)
+      }
     }
     es.addEventListener('done', () => es.close())
-    es.onerror = () => es.close()
+    es.onerror = () => {
+      setErrorState({
+        sessionId,
+        message: 'Live artifact stream disconnected. Reconnecting...',
+      })
+    }
     return () => es.close()
   }, [sessionId])
 
-  return byIter
+  return {
+    byIter: artifactState.sessionId === sessionId ? artifactState.byIter : {},
+    error: errorState.sessionId === sessionId ? errorState.message : null,
+  }
 }
 
 // ------------------------------------------------------------------
 // Small helper: fetch a JSON file from the artifact endpoint.
 // ------------------------------------------------------------------
 function useJsonArtifact(sessionId, path) {
-  const [data, setData] = useState(null)
+  const [result, setResult] = useState({ key: null, data: null })
+  const key = sessionId && path ? `${sessionId}:${path}` : null
+
   useEffect(() => {
-    setData(null)
-    if (!sessionId || !path) return
+    if (!key) return
     fetch(agentArtifactUrl(sessionId, path))
       .then(r => r.ok ? r.json() : null)
-      .then(setData)
-      .catch(() => {})
-  }, [sessionId, path])
-  return data
+      .then(data => setResult({ key, data }))
+      .catch((err) => console.warn(`Failed to load artifact JSON ${path}:`, err))
+  }, [sessionId, path, key])
+
+  return result.key === key ? result.data : null
 }
 
 // ------------------------------------------------------------------
@@ -211,7 +225,7 @@ function FinalVideoPanel({ sessionId, finalPath, scoreJson, segmentsJson }) {
     const v = videoRef.current
     if (!v) return
     v.currentTime = segIdx * segDur
-    v.play().catch(() => {})
+    v.play().catch((err) => console.warn('segment preview playback failed', err))
   }
 
   return (
@@ -233,6 +247,7 @@ function FinalVideoPanel({ sessionId, finalPath, scoreJson, segmentsJson }) {
                 <button
                   key={i}
                   onClick={() => seekTo(i)}
+                  aria-label={`Play segment ${i} with score ${score.toFixed(3)}`}
                   className="flex-1 h-8 rounded-sm relative group"
                   style={{ background: `hsl(${hue}, 70%, 35%)` }}
                   title={`segment ${i}: ${score.toFixed(3)}`}
@@ -259,7 +274,7 @@ function FinalVideoPanel({ sessionId, finalPath, scoreJson, segmentsJson }) {
 // Main canvas
 // ------------------------------------------------------------------
 export default function ArtifactCanvas({ sessionId, iteration, setIteration, sessionData }) {
-  const byIter = useArtifacts(sessionId)
+  const { byIter, error: artifactError } = useArtifacts(sessionId)
 
   const availableIters = useMemo(
     () => Object.keys(byIter).map(Number).sort((a, b) => a - b),
@@ -319,6 +334,11 @@ export default function ArtifactCanvas({ sessionId, iteration, setIteration, ses
           })}
         </div>
       </div>
+      {artifactError && (
+        <p className="mx-4 mt-3 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200" role="alert">
+          {artifactError}
+        </p>
+      )}
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto p-4 space-y-5 min-h-0">

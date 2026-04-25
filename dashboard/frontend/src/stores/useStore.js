@@ -1,5 +1,11 @@
 import { create } from 'zustand'
 
+function revokeMediaUrl(url) {
+  if (url?.startsWith('blob:')) {
+    URL.revokeObjectURL(url)
+  }
+}
+
 const useStore = create((set, get) => ({
   // Timeline
   currentTime: 0,        // seconds (float) — wall-clock time in the stimulus
@@ -96,6 +102,7 @@ const useStore = create((set, get) => ({
   jobId: null,
   jobStatus: null,       // "processing" | "done" | "error"
   jobProgress: 0,
+  jobError: null,
   setJob: (j) => set(j),
 
   // Input
@@ -103,16 +110,22 @@ const useStore = create((set, get) => ({
   mediaUrl: null,        // blob URL for video/audio, or null for text
   textContent: null,     // raw text for text input
   setInput: (inputType, mediaUrl, textContent) =>
-    set({ inputType, mediaUrl: mediaUrl ?? null, textContent: textContent ?? null }),
+    set((s) => {
+      if (s.mediaUrl && s.mediaUrl !== mediaUrl) revokeMediaUrl(s.mediaUrl)
+      return { inputType, mediaUrl: mediaUrl ?? null, textContent: textContent ?? null }
+    }),
 
   // Reset for new prediction
-  reset: () => set({
-    currentTime: 0, duration: 0, isPlaying: false, timestep: 0, timestepFrac: 0,
-    preds: null, regions: null, fineGroups: null, coarseGroups: null,
-    regionVertices: null, selectedRegion: null,
-    globalVmin: 0, globalVmax: 1, segmentTimes: null, hemodynamicLag: 5.0,
-    jobId: null, jobStatus: null, jobProgress: 0,
-    inputType: null, mediaUrl: null, textContent: null,
+  reset: () => set((s) => {
+    revokeMediaUrl(s.mediaUrl)
+    return {
+      currentTime: 0, duration: 0, isPlaying: false, timestep: 0, timestepFrac: 0,
+      preds: null, regions: null, fineGroups: null, coarseGroups: null,
+      regionVertices: null, selectedRegion: null,
+      globalVmin: 0, globalVmax: 1, segmentTimes: null, hemodynamicLag: 5.0,
+      jobId: null, jobStatus: null, jobProgress: 0, jobError: null,
+      inputType: null, mediaUrl: null, textContent: null,
+    }
   }),
 }))
 

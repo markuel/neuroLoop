@@ -1,11 +1,28 @@
 const BASE = '/api'
 
+async function responseError(res) {
+  const fallback = `${res.status} ${res.statusText}`
+  const contentType = res.headers.get('Content-Type') || ''
+  try {
+    if (contentType.includes('application/json')) {
+      const body = await res.json()
+      if (typeof body?.detail === 'string') return new Error(body.detail)
+      if (typeof body?.error === 'string') return new Error(body.error)
+      return new Error(fallback)
+    }
+    const text = await res.text()
+    return new Error(text || fallback)
+  } catch {
+    return new Error(fallback)
+  }
+}
+
 export async function fetchJSON(path, opts = {}) {
   const res = await fetch(`${BASE}${path}`, {
     headers: { 'Content-Type': 'application/json' },
     ...opts,
   })
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  if (!res.ok) throw await responseError(res)
   return res.json()
 }
 
@@ -29,7 +46,7 @@ export async function getResults(jobId) {
 
 export async function getMesh() {
   const res = await fetch(`${BASE}/mesh`)
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  if (!res.ok) throw await responseError(res)
   const nVertices = parseInt(res.headers.get('X-N-Vertices'))
   const nFaces = parseInt(res.headers.get('X-N-Faces'))
   const buf = await res.arrayBuffer()
@@ -97,7 +114,7 @@ export async function uploadReference(sessionId, file) {
     method: 'POST',
     body: form,
   })
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  if (!res.ok) throw await responseError(res)
   return res.json()
 }
 
@@ -105,7 +122,7 @@ export async function deleteReference(sessionId, name) {
   const res = await fetch(`${BASE}/agent/sessions/${sessionId}/references/${encodeURIComponent(name)}`, {
     method: 'DELETE',
   })
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  if (!res.ok) throw await responseError(res)
   return res.json()
 }
 

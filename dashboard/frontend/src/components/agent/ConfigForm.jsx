@@ -1,9 +1,15 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useId } from 'react'
 import {
   createDraftSession, uploadReference, deleteReference, agentArtifactUrl,
 } from '../../utils/api'
 
 export default function ConfigForm({ config, onStart }) {
+  const formId = useId()
+  const targetId = `${formId}-target`
+  const briefId = `${formId}-brief`
+  const durationId = `${formId}-duration`
+  const maxIterationsId = `${formId}-max-iterations`
+  const targetScoreId = `${formId}-target-score`
   const [form, setForm] = useState({
     target_description: '',
     creative_brief: '',
@@ -15,6 +21,8 @@ export default function ConfigForm({ config, onStart }) {
   const [refs, setRefs] = useState([]) // [{name}]
   const [starting, setStarting] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [referenceError, setReferenceError] = useState(null)
+  const [startError, setStartError] = useState(null)
   const fileRef = useRef(null)
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -29,6 +37,7 @@ export default function ConfigForm({ config, onStart }) {
   const handleFiles = async (files) => {
     if (!files?.length) return
     setUploading(true)
+    setReferenceError(null)
     try {
       const id = await ensureDraft()
       const uploaded = []
@@ -39,6 +48,7 @@ export default function ConfigForm({ config, onStart }) {
       setRefs(r => [...r, ...uploaded])
     } catch (err) {
       console.error('upload failed', err)
+      setReferenceError(err.message || 'Reference upload failed.')
     } finally {
       setUploading(false)
       if (fileRef.current) fileRef.current.value = ''
@@ -47,16 +57,26 @@ export default function ConfigForm({ config, onStart }) {
 
   const handleRemove = async (name) => {
     if (!draftId) return
-    await deleteReference(draftId, name)
-    setRefs(r => r.filter(x => x.name !== name))
+    setReferenceError(null)
+    try {
+      await deleteReference(draftId, name)
+      setRefs(r => r.filter(x => x.name !== name))
+    } catch (err) {
+      console.error('delete reference failed', err)
+      setReferenceError(err.message || 'Reference could not be removed.')
+    }
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!form.target_description.trim()) return
     setStarting(true)
+    setStartError(null)
     try {
       await onStart({ ...form, session_id: draftId })
+    } catch (err) {
+      console.error('agent start failed', err)
+      setStartError(err.message || 'Agent loop could not be started.')
     } finally {
       setStarting(false)
     }
@@ -70,8 +90,9 @@ export default function ConfigForm({ config, onStart }) {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
       <div>
-        <label className="block text-xs text-gray-400 mb-1.5">Target brain state</label>
+        <label htmlFor={targetId} className="block text-xs text-gray-400 mb-1.5">Target brain state</label>
         <textarea
+          id={targetId}
           className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 resize-none focus:outline-none focus:border-red-500 transition"
           rows={3}
           placeholder="e.g. 'deep calm with spatial exploration, engaging motion and place regions'"
@@ -82,10 +103,11 @@ export default function ConfigForm({ config, onStart }) {
       </div>
 
       <div>
-        <label className="block text-xs text-gray-400 mb-1.5">
+        <label htmlFor={briefId} className="block text-xs text-gray-400 mb-1.5">
           Creative brief <span className="text-gray-600">(optional)</span>
         </label>
         <textarea
+          id={briefId}
           className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 resize-none focus:outline-none focus:border-red-500 transition"
           rows={3}
           placeholder="What the video should actually be — e.g. 'action chase through a neon city starring the character in the reference photo, holding the product'"
@@ -98,18 +120,19 @@ export default function ConfigForm({ config, onStart }) {
         <label className="block text-xs text-gray-400 mb-1.5">
           Reference images <span className="text-gray-600">(optional)</span>
         </label>
-        <div
+        <button
+          type="button"
           onDrop={handleDrop}
           onDragOver={e => e.preventDefault()}
           onClick={() => fileRef.current?.click()}
-          className="border border-dashed border-gray-700 rounded-lg px-3 py-4 text-xs text-gray-500 text-center cursor-pointer hover:border-gray-600 hover:text-gray-400 transition"
+          className="w-full border border-dashed border-gray-700 rounded-lg px-3 py-4 text-xs text-gray-500 text-center cursor-pointer hover:border-gray-600 hover:text-gray-400 focus:outline-none focus:border-red-500 transition"
         >
           {uploading
             ? 'Uploading…'
             : refs.length
               ? `${refs.length} reference image${refs.length === 1 ? '' : 's'} — drop or click to add more`
               : 'Drop images here (product photos, character refs, style refs)'}
-        </div>
+        </button>
         <input
           ref={fileRef}
           type="file"
@@ -118,6 +141,11 @@ export default function ConfigForm({ config, onStart }) {
           className="hidden"
           onChange={e => handleFiles(Array.from(e.target.files))}
         />
+        {referenceError && (
+          <p className="mt-2 text-xs text-red-300" role="alert">
+            {referenceError}
+          </p>
+        )}
         {refs.length > 0 && (
           <div className="mt-3 grid grid-cols-4 gap-2">
             {refs.map(r => (
@@ -143,8 +171,9 @@ export default function ConfigForm({ config, onStart }) {
 
       <div className="grid grid-cols-3 gap-3">
         <div>
-          <label className="block text-xs text-gray-400 mb-1.5">Duration</label>
+          <label htmlFor={durationId} className="block text-xs text-gray-400 mb-1.5">Duration</label>
           <select
+            id={durationId}
             className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-red-500"
             value={form.duration}
             onChange={e => set('duration', Number(e.target.value))}
@@ -155,8 +184,9 @@ export default function ConfigForm({ config, onStart }) {
           </select>
         </div>
         <div>
-          <label className="block text-xs text-gray-400 mb-1.5">Max iter.</label>
+          <label htmlFor={maxIterationsId} className="block text-xs text-gray-400 mb-1.5">Max iter.</label>
           <input
+            id={maxIterationsId}
             type="number" min={1} max={50}
             className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-red-500"
             value={form.max_iterations}
@@ -164,8 +194,9 @@ export default function ConfigForm({ config, onStart }) {
           />
         </div>
         <div>
-          <label className="block text-xs text-gray-400 mb-1.5">Target</label>
+          <label htmlFor={targetScoreId} className="block text-xs text-gray-400 mb-1.5">Target</label>
           <input
+            id={targetScoreId}
             type="number" min={0} max={1} step={0.05}
             className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-red-500"
             value={form.target_score}
@@ -179,6 +210,12 @@ export default function ConfigForm({ config, onStart }) {
           <span>Image: <span className="text-gray-300">{config.image_model}</span></span>
           <span>Video: <span className="text-gray-300">{config.video_model}</span></span>
         </div>
+      )}
+
+      {startError && (
+        <p className="text-xs text-red-300" role="alert">
+          {startError}
+        </p>
       )}
 
       <button
