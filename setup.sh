@@ -30,10 +30,11 @@ step "Checking Node.js"
 
 if ! command -v node &>/dev/null; then
   echo "  Installing Node.js..."
-  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash -s -- --silent
+  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
   export NVM_DIR="$HOME/.nvm"
   [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-  nvm install --lts --silent
+  nvm install --lts
+  nvm use --lts
 fi
 ok "node $(node --version)"
 
