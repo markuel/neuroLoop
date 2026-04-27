@@ -106,7 +106,7 @@ function useActivationDiagnostics() {
       const value = frameB ? frameA[i] * invFrac + frameB[i] * frac : frameA[i]
       if (value < min) min = value
       if (value > max) max = value
-      if ((value - globalVmin) / range >= 0.2) lit += 1
+      if ((value - globalVmin) / range >= 0.3) lit += 1
     }
 
     return {
@@ -239,7 +239,7 @@ export default function BrainViewer() {
           <div
             className="mt-2 h-2 rounded-full border border-gray-700"
             style={{
-              background: 'linear-gradient(90deg, rgb(107,107,107) 0%, rgb(107,107,107) 18%, rgb(210,83,65) 40%, rgb(255,166,42) 70%, rgb(255,255,255) 100%)',
+              background: 'linear-gradient(90deg, rgb(107,107,107) 0%, rgb(107,107,107) 28%, rgb(209,45,32) 48%, rgb(240,122,25) 72%, rgb(255,204,51) 100%)',
             }}
           />
           <div className="mt-1 flex justify-between font-mono text-[10px] text-gray-500">
