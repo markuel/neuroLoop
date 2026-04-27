@@ -95,6 +95,7 @@ class ExtractWordsFromAudio(EventsTransform):
     def _get_transcript_from_audio(wav_filename: Path, language: str) -> pd.DataFrame:
         import json
         import os
+        import shutil
         import subprocess
         import tempfile
 
@@ -108,9 +109,20 @@ class ExtractWordsFromAudio(EventsTransform):
         compute_type = "float16"
 
         with tempfile.TemporaryDirectory() as output_dir:
+            uvx = shutil.which("uvx")
+            if uvx is None:
+                local_uvx = Path.home() / ".local" / "bin" / "uvx"
+                if local_uvx.exists():
+                    uvx = str(local_uvx)
+            if uvx is None:
+                raise RuntimeError(
+                    "uvx is required to run whisperx, but it was not found on PATH "
+                    "or at ~/.local/bin/uvx. Re-run setup.sh to install uv."
+                )
+
             logger.info("Running whisperx via uvx...")
             cmd = [
-                "uvx",
+                uvx,
                 "whisperx",
                 str(wav_filename),
                 "--model",
