@@ -10,6 +10,14 @@ import { getMesh, getAtlas, getResults } from './utils/api'
 const AgentTab = lazy(() => import('./components/AgentTab'))
 const BrainViewer = lazy(() => import('./components/BrainViewer'))
 
+async function fetchResult(url, type) {
+  const res = await fetch(url)
+  if (!res.ok) {
+    throw new Error(`Could not load ${type}: ${res.status} ${res.statusText}`)
+  }
+  return type === 'binary' ? res.arrayBuffer() : res.json()
+}
+
 function StatusPill({ label, value, tone = 'muted' }) {
   const tones = {
     ok: 'border-green-500/30 bg-green-500/10 text-green-300',
@@ -93,14 +101,17 @@ export default function App() {
   // Shared: fetch + parse + apply a completed job's results into the viewer
   const applyJobResults = useCallback(async (res, jobId) => {
     const [predsResp, metaResp, regionsResp] = await Promise.all([
-      fetch(res.preds_url).then((r) => r.arrayBuffer()),
-      fetch(res.meta_url).then((r) => r.json()),
-      fetch(res.regions_url).then((r) => r.json()),
+      fetchResult(res.preds_url, 'binary'),
+      fetchResult(res.meta_url, 'metadata'),
+      fetchResult(res.regions_url, 'region data'),
     ])
 
     const nTimesteps = metaResp.n_timesteps
     const nVerts = metaResp.n_vertices
     const predsRaw = new Float32Array(predsResp)
+    if (predsRaw.length !== nTimesteps * nVerts) {
+      throw new Error(`Prediction payload has ${predsRaw.length} values; expected ${nTimesteps * nVerts}.`)
+    }
     const preds = []
     for (let t = 0; t < nTimesteps; t++) {
       preds.push(predsRaw.subarray(t * nVerts, (t + 1) * nVerts))

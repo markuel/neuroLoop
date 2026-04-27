@@ -17,6 +17,7 @@ from .storage import (
     STORAGE_MODE,
     presigned_upload_url,
     presigned_download_url,
+    download_bytes,
     get_local_file_path,
     is_supported_upload_content_type,
     LOCAL_DATA_DIR,
@@ -241,11 +242,33 @@ def results(job_id: str):
     prefix = job["results_prefix"]
     return {
         "status": "done",
-        "preds_url": presigned_download_url(f"{prefix}/preds.bin"),
-        "regions_url": presigned_download_url(f"{prefix}/regions.json"),
-        "meta_url": presigned_download_url(f"{prefix}/meta.json"),
+        "preds_url": f"/api/results/{job_id}/preds.bin",
+        "regions_url": f"/api/results/{job_id}/regions.json",
+        "meta_url": f"/api/results/{job_id}/meta.json",
         "meta": job.get("meta_cache", {}),
     }
+
+
+@app.get("/api/results/{job_id}/{artifact_name}")
+def result_artifact(job_id: str, artifact_name: Literal["preds.bin", "regions.json", "meta.json"]):
+    job = get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job["status"] != "done":
+        raise HTTPException(status_code=409, detail="Job results are not ready")
+
+    key = f"{job['results_prefix']}/{artifact_name}"
+    content_types = {
+        "preds.bin": "application/octet-stream",
+        "regions.json": "application/json",
+        "meta.json": "application/json",
+    }
+    try:
+        data = download_bytes(key)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Result artifact not found") from exc
+    return Response(content=data, media_type=content_types[artifact_name])
+
 
 @app.get("/api/runs")
 def runs():
