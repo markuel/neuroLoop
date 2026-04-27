@@ -7,9 +7,8 @@ import { activationsToColors, BRAIN_GRAY_R, BRAIN_GRAY_G, BRAIN_GRAY_B } from '.
 
 function BrainMesh() {
   const mesh = useStore((s) => s.mesh)
-  const colorsRef = useRef(null)
+  const meshRef = useRef(null)
   const lerpBufRef = useRef(null)
-  const geoRef = useRef(null)
 
   const material = useMemo(() => new THREE.MeshStandardMaterial({
     vertexColors: true,
@@ -32,22 +31,22 @@ function BrainMesh() {
       colors[i * 3 + 1] = BRAIN_GRAY_G
       colors[i * 3 + 2] = BRAIN_GRAY_B
     }
-    const lerpBuf = new Float32Array(mesh.nVertices)
     const colorAttr = new THREE.BufferAttribute(colors, 3)
     colorAttr.setUsage(THREE.DynamicDrawUsage)
     geo.setAttribute('color', colorAttr)
-    colorsRef.current = colorAttr.array
-    lerpBufRef.current = lerpBuf
-    geoRef.current = geo
     return geo
   }, [mesh])
 
   // Update colors in the render loop — reads ALL state from store to avoid stale closures
   useFrame(() => {
-    const geo = geoRef.current
-    const colors = colorsRef.current
+    const geo = meshRef.current?.geometry
+    const colorAttr = geo?.attributes.color
+    if (!geo || !colorAttr) return
+    const colors = colorAttr.array
+    if (!lerpBufRef.current || lerpBufRef.current.length !== colors.length / 3) {
+      lerpBufRef.current = new Float32Array(colors.length / 3)
+    }
     const lerpBuf = lerpBufRef.current
-    if (!geo || !colors || !lerpBuf) return
     const { preds, timestep, timestepFrac, globalVmin, globalVmax, selectedRegion, regionVertices } = useStore.getState()
     if (!preds) return
     const frameA = preds[timestep]
@@ -76,13 +75,13 @@ function BrainMesh() {
       }
     }
 
-    geo.attributes.color.needsUpdate = true
+    colorAttr.needsUpdate = true
   })
 
   if (!geometry) return null
 
   return (
-    <mesh geometry={geometry} material={material} />
+    <mesh ref={meshRef} geometry={geometry} material={material} />
   )
 }
 
