@@ -33,10 +33,10 @@ function BrainMesh() {
       colors[i * 3 + 2] = BRAIN_GRAY_B
     }
     const lerpBuf = new Float32Array(mesh.nVertices)
-    const colorAttr = new THREE.Float32BufferAttribute(colors, 3)
+    const colorAttr = new THREE.BufferAttribute(colors, 3)
     colorAttr.setUsage(THREE.DynamicDrawUsage)
     geo.setAttribute('color', colorAttr)
-    colorsRef.current = colors
+    colorsRef.current = colorAttr.array
     lerpBufRef.current = lerpBuf
     geoRef.current = geo
     return geo
