@@ -240,6 +240,7 @@ def _run_prediction(job_id: str) -> None:
                 "input_type": input_type,
                 "timestamp": job["timestamp"],
                 "results_prefix": prefix,
+                "input_key": job["s3_key"],
                 "n_timesteps": meta["n_timesteps"],
                 "duration_seconds": duration_seconds,
                 "thumbnail_key": thumbnail_key,

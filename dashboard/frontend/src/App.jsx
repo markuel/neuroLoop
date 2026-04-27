@@ -121,9 +121,10 @@ export default function App() {
 
     const currentInput = useStore.getState()
     const preserveCurrentInput = currentInput.inputType === metaResp.input_type
+    const restoredMediaUrl = metaResp.input_type === 'video' || metaResp.input_type === 'audio' ? res.input_url : null
     setInput(
       metaResp.input_type,
-      preserveCurrentInput ? currentInput.mediaUrl : null,
+      preserveCurrentInput ? currentInput.mediaUrl : restoredMediaUrl,
       preserveCurrentInput ? currentInput.textContent : null,
     )
     setPredictions({

@@ -245,6 +245,7 @@ def results(job_id: str):
         "preds_url": f"/api/results/{job_id}/preds.bin",
         "regions_url": f"/api/results/{job_id}/regions.json",
         "meta_url": f"/api/results/{job_id}/meta.json",
+        "input_url": f"/api/results/{job_id}/input" if job.get("s3_key") or job.get("input_key") else None,
         "meta": job.get("meta_cache", {}),
     }
 
@@ -268,6 +269,26 @@ def result_artifact(job_id: str, artifact_name: Literal["preds.bin", "regions.js
     except Exception as exc:
         raise HTTPException(status_code=404, detail="Result artifact not found") from exc
     return Response(content=data, media_type=content_types[artifact_name])
+
+
+@app.get("/api/results/{job_id}/input")
+def result_input(job_id: str):
+    job = get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    key = job.get("s3_key") or job.get("input_key")
+    if not key:
+        raise HTTPException(status_code=404, detail="Original input is not available for this job")
+    media_types = {
+        "video": "video/mp4",
+        "audio": "audio/mpeg",
+        "text": "text/plain",
+    }
+    try:
+        data = download_bytes(key)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Original input not found") from exc
+    return Response(content=data, media_type=media_types.get(job.get("input_type"), "application/octet-stream"))
 
 
 @app.get("/api/runs")
