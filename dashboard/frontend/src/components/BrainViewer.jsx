@@ -11,6 +11,14 @@ function BrainMesh() {
   const lerpBufRef = useRef(null)
   const geoRef = useRef(null)
 
+  const material = useMemo(() => new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    side: THREE.DoubleSide,
+    roughness: 0.9,
+    metalness: 0,
+    toneMapped: false,
+  }), [])
+
   const geometry = useMemo(() => {
     if (!mesh) return null
     const geo = new THREE.BufferGeometry()
@@ -74,9 +82,7 @@ function BrainMesh() {
   if (!geometry) return null
 
   return (
-    <mesh geometry={geometry}>
-      <meshStandardMaterial vertexColors side={THREE.DoubleSide} roughness={0.9} metalness={0} toneMapped={false} />
-    </mesh>
+    <mesh geometry={geometry} material={material} />
   )
 }
 
