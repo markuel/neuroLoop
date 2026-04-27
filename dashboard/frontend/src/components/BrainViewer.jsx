@@ -25,7 +25,9 @@ function BrainMesh() {
       colors[i * 3 + 2] = BRAIN_GRAY_B
     }
     const lerpBuf = new Float32Array(mesh.nVertices)
-    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
+    const colorAttr = new THREE.Float32BufferAttribute(colors, 3)
+    colorAttr.setUsage(THREE.DynamicDrawUsage)
+    geo.setAttribute('color', colorAttr)
     return { geo, colors, lerpBuf }
   }, [mesh])
 
@@ -76,9 +78,43 @@ function BrainMesh() {
 
   return (
     <mesh geometry={geometryData.geo}>
-      <meshStandardMaterial vertexColors side={THREE.DoubleSide} />
+      <meshBasicMaterial vertexColors side={THREE.DoubleSide} toneMapped={false} />
     </mesh>
   )
+}
+
+function useActivationDiagnostics() {
+  const preds = useStore((s) => s.preds)
+  const timestep = useStore((s) => s.timestep)
+  const timestepFrac = useStore((s) => s.timestepFrac)
+  const globalVmin = useStore((s) => s.globalVmin)
+  const globalVmax = useStore((s) => s.globalVmax)
+
+  return useMemo(() => {
+    if (!preds?.length) return null
+    const frameA = preds[timestep]
+    if (!frameA) return null
+    const frameB = preds[timestep + 1]
+    const frac = frameB ? timestepFrac : 0
+    const invFrac = 1 - frac
+    const range = globalVmax - globalVmin || 1
+    let lit = 0
+    let min = Infinity
+    let max = -Infinity
+
+    for (let i = 0, n = frameA.length; i < n; i++) {
+      const value = frameB ? frameA[i] * invFrac + frameB[i] * frac : frameA[i]
+      if (value < min) min = value
+      if (value > max) max = value
+      if ((value - globalVmin) / range >= 0.2) lit += 1
+    }
+
+    return {
+      litPct: (lit / frameA.length) * 100,
+      min,
+      max,
+    }
+  }, [preds, timestep, timestepFrac, globalVmin, globalVmax])
 }
 
 const CAMERA_DISTANCE = 200 // how far from the centroid the camera orbits
@@ -185,6 +221,7 @@ export default function BrainViewer() {
   const globalVmin = useStore((s) => s.globalVmin)
   const globalVmax = useStore((s) => s.globalVmax)
   const smoothFrame = preds ? Math.min(preds.length - 1, timestep + timestepFrac) : 0
+  const activationDiagnostics = useActivationDiagnostics()
 
   return (
     <div className="w-full h-full bg-gray-900 rounded-lg overflow-hidden relative">
@@ -209,6 +246,11 @@ export default function BrainViewer() {
             <span>{globalVmin.toFixed(2)}</span>
             <span>{globalVmax.toFixed(2)}</span>
           </div>
+          {activationDiagnostics && (
+            <div className="mt-1 font-mono text-[10px] text-gray-500">
+              {activationDiagnostics.litPct.toFixed(1)}% lit | {activationDiagnostics.min.toFixed(2)}..{activationDiagnostics.max.toFixed(2)}
+            </div>
+          )}
         </div>
       )}
       <Canvas
