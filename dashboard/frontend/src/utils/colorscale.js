@@ -8,7 +8,7 @@ export const BRAIN_GRAY_B = 0.42
  *
  * 1. Normalize raw activations to 0-1 using robust percentile bounds (vmin/vmax)
  * 2. Clip to [0, 1]
- * 3. Below threshold (0.35): blend toward gray brain surface
+ * 3. Below threshold (0.2): blend toward gray brain surface
  * 4. Above threshold: fire colorscale at full opacity
  *
  * Since WebGL vertex colors do not support true transparency on a single mesh,
@@ -23,7 +23,7 @@ export const BRAIN_GRAY_B = 0.42
  * @param {number} threshold - normalized cutoff below which vertices are gray
  * @param {number} fadeWidth - range over which alpha ramps from 0 to 1 above threshold
  */
-export function activationsToColors(activations, vmin, vmax, out, threshold = 0.35, fadeWidth = 0.25) {
+export function activationsToColors(activations, vmin, vmax, out, threshold = 0.2, fadeWidth = 0.2) {
   const n = activations.length
   const range = vmax - vmin || 1
 

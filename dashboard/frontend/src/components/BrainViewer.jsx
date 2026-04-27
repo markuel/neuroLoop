@@ -202,7 +202,7 @@ export default function BrainViewer() {
           <div
             className="mt-2 h-2 rounded-full border border-gray-700"
             style={{
-              background: 'linear-gradient(90deg, rgb(107,107,107) 0%, rgb(107,107,107) 32%, rgb(210,83,65) 50%, rgb(255,166,42) 75%, rgb(255,255,255) 100%)',
+              background: 'linear-gradient(90deg, rgb(107,107,107) 0%, rgb(107,107,107) 18%, rgb(210,83,65) 40%, rgb(255,166,42) 70%, rgb(255,255,255) 100%)',
             }}
           />
           <div className="mt-1 flex justify-between font-mono text-[10px] text-gray-500">
