@@ -8,8 +8,8 @@ export const BRAIN_GRAY_B = 0.42
  *
  * 1. Normalize raw activations to 0-1 using robust percentile bounds (vmin/vmax)
  * 2. Clip to [0, 1]
- * 3. Below threshold (0.2): blend toward gray brain surface
- * 4. Above threshold: fire colorscale at full opacity
+ * 3. Below threshold (0.3): blend toward gray brain surface
+ * 4. Above threshold: red/orange/yellow heatmap at full opacity
  *
  * Since WebGL vertex colors do not support true transparency on a single mesh,
  * we blend the fire color with gray proportionally.
@@ -23,7 +23,7 @@ export const BRAIN_GRAY_B = 0.42
  * @param {number} threshold - normalized cutoff below which vertices are gray
  * @param {number} fadeWidth - range over which alpha ramps from 0 to 1 above threshold
  */
-export function activationsToColors(activations, vmin, vmax, out, threshold = 0.2, fadeWidth = 0.2) {
+export function activationsToColors(activations, vmin, vmax, out, threshold = 0.3, fadeWidth = 0.25) {
   const n = activations.length
   const range = vmax - vmin || 1
 
@@ -36,10 +36,11 @@ export function activationsToColors(activations, vmin, vmax, out, threshold = 0.
       out[j + 1] = BRAIN_GRAY_G
       out[j + 2] = BRAIN_GRAY_B
     } else {
-      // Fire colorscale (inlined to avoid per-vertex array allocation)
-      const fr = Math.min(1, t * 2)
-      const fg = Math.max(0, Math.min(1, (t - 0.35) * 2.5))
-      const fb = Math.max(0, Math.min(1, (t - 0.7) * 3.33))
+      // Capped heatmap: visible activation without washing the surface white.
+      const heat = Math.max(0, Math.min(1, (t - threshold) / (1 - threshold)))
+      const fr = 0.82 + 0.18 * heat
+      const fg = 0.12 + 0.68 * Math.max(0, Math.min(1, (heat - 0.25) / 0.75))
+      const fb = 0.04 + 0.12 * Math.max(0, Math.min(1, (heat - 0.65) / 0.35))
 
       const alpha = Math.min(1, (t - threshold) / fadeWidth)
       const invAlpha = 1 - alpha

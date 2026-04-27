@@ -18,6 +18,7 @@ from .storage import (
     presigned_upload_url,
     presigned_download_url,
     download_bytes,
+    list_prefix,
     get_local_file_path,
     is_supported_upload_content_type,
     LOCAL_DATA_DIR,
@@ -38,6 +39,24 @@ from .agent import (
 )
 
 MAX_REFERENCE_BYTES = 20 * 1024 * 1024
+
+
+def _recover_input_key(job: dict) -> str | None:
+    key = job.get("s3_key") or job.get("input_key")
+    if key:
+        return key
+
+    filename = job.get("filename")
+    if not filename:
+        return None
+    try:
+        matches = [
+            candidate for candidate in list_prefix("uploads/")
+            if candidate.rsplit("/", 1)[-1] == filename
+        ]
+    except Exception:
+        return None
+    return sorted(matches)[-1] if matches else None
 
 
 def _safe_reference_name(name: str) -> str:
@@ -245,7 +264,7 @@ def results(job_id: str):
         "preds_url": f"/api/results/{job_id}/preds.bin",
         "regions_url": f"/api/results/{job_id}/regions.json",
         "meta_url": f"/api/results/{job_id}/meta.json",
-        "input_url": f"/api/results/{job_id}/input" if job.get("s3_key") or job.get("input_key") else None,
+        "input_url": f"/api/results/{job_id}/input" if _recover_input_key(job) else None,
         "meta": job.get("meta_cache", {}),
     }
 
@@ -276,7 +295,7 @@ def result_input(job_id: str):
     job = get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    key = job.get("s3_key") or job.get("input_key")
+    key = _recover_input_key(job)
     if not key:
         raise HTTPException(status_code=404, detail="Original input is not available for this job")
     media_types = {
