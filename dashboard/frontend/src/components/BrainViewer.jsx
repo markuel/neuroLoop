@@ -1,4 +1,4 @@
-import { useRef, useEffect, useMemo } from 'react'
+import { useRef, useMemo } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, GizmoHelper, GizmoViewcube } from '@react-three/drei'
 import * as THREE from 'three'
@@ -7,9 +7,6 @@ import { activationsToColors, BRAIN_GRAY_R, BRAIN_GRAY_G, BRAIN_GRAY_B } from '.
 
 function BrainMesh() {
   const mesh = useStore((s) => s.mesh)
-  const colorsRef = useRef(null)
-  const lerpBufRef = useRef(null)
-  const geoRef = useRef(null)
 
   const geometryData = useMemo(() => {
     if (!mesh) return null
@@ -31,18 +28,10 @@ function BrainMesh() {
     return { geo, colors, lerpBuf }
   }, [mesh])
 
-  useEffect(() => {
-    colorsRef.current = geometryData?.colors ?? null
-    lerpBufRef.current = geometryData?.lerpBuf ?? null
-    geoRef.current = geometryData?.geo ?? null
-  }, [geometryData])
-
   // Update colors in the render loop — reads ALL state from store to avoid stale closures
   useFrame(() => {
-    const geo = geoRef.current
-    const colors = colorsRef.current
-    const lerpBuf = lerpBufRef.current
-    if (!geo || !colors || !lerpBuf) return
+    if (!geometryData) return
+    const { geo, colors, lerpBuf } = geometryData
     const { preds, timestep, timestepFrac, globalVmin, globalVmax, selectedRegion, regionVertices } = useStore.getState()
     if (!preds) return
     const frameA = preds[timestep]
@@ -78,7 +67,7 @@ function BrainMesh() {
 
   return (
     <mesh geometry={geometryData.geo}>
-      <meshBasicMaterial vertexColors side={THREE.DoubleSide} toneMapped={false} />
+      <meshStandardMaterial vertexColors side={THREE.DoubleSide} roughness={0.9} metalness={0} toneMapped={false} />
     </mesh>
   )
 }
@@ -123,13 +112,13 @@ function CameraFocus({ controlsRef }) {
   const mesh = useStore((s) => s.mesh)
   const selectedRegion = useStore((s) => s.selectedRegion)
   const regionVertices = useStore((s) => s.regionVertices)
+  const focusKeyRef = useRef(null)
   const animRef = useRef(null)
   const { camera } = useThree()
 
-  // Compute centroid + camera position when selection changes
-  useEffect(() => {
-    if (!selectedRegion || !mesh || !regionVertices?.[selectedRegion]) {
-      // Deselected — animate back to default view
+  function beginFocusAnimation() {
+    const idxList = selectedRegion && regionVertices?.[selectedRegion]
+    if (!selectedRegion || !mesh || !idxList?.length) {
       animRef.current = {
         start: performance.now(),
         fromTarget: null,
@@ -139,7 +128,7 @@ function CameraFocus({ controlsRef }) {
       }
       return
     }
-    const idxList = regionVertices[selectedRegion]
+
     const verts = mesh.vertices
     const nPerHemi = mesh.nVertices / 2 // fsaverage5: 10242 per hemisphere
 
@@ -189,10 +178,19 @@ function CameraFocus({ controlsRef }) {
       toTarget: centroid,
       toPos: camPos,
     }
-  }, [selectedRegion, mesh, regionVertices, camera])
+  }
 
   // Smoothly animate both camera position and orbit target
   useFrame(() => {
+    const focusKey = selectedRegion && mesh && regionVertices?.[selectedRegion]?.length
+      ? `${selectedRegion}:${mesh.nVertices}`
+      : '__default__'
+
+    if (focusKeyRef.current !== focusKey) {
+      focusKeyRef.current = focusKey
+      beginFocusAnimation()
+    }
+
     const anim = animRef.current
     if (!anim || !controlsRef.current) return
     if (!anim.fromTarget) {
