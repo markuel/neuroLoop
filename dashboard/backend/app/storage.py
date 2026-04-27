@@ -49,6 +49,12 @@ def upload_bytes(data: bytes, key: str, content_type: str = "application/octet-s
     return _s3_upload_bytes(data, key, content_type)
 
 
+def download_bytes(key: str) -> bytes:
+    if STORAGE_MODE == "local":
+        return _local_download_bytes(key)
+    return _s3_download_bytes(key)
+
+
 def list_prefix(prefix: str) -> list[str]:
     if STORAGE_MODE == "local":
         return _local_list_prefix(prefix)
@@ -81,6 +87,10 @@ def _local_upload_bytes(data: bytes, key: str) -> None:
     dest = get_local_file_path(key)
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(data)
+
+
+def _local_download_bytes(key: str) -> bytes:
+    return get_local_file_path(key).read_bytes()
 
 
 def _local_list_prefix(prefix: str) -> list[str]:
@@ -159,6 +169,10 @@ def _s3_download_file(key: str, local_path: str) -> str:
 
 def _s3_upload_bytes(data: bytes, key: str, content_type: str = "application/octet-stream") -> None:
     _s3_client().put_object(Bucket=S3_BUCKET, Key=key, Body=data, ContentType=content_type)
+
+
+def _s3_download_bytes(key: str) -> bytes:
+    return _s3_client().get_object(Bucket=S3_BUCKET, Key=key)["Body"].read()
 
 
 def _s3_list_prefix(prefix: str) -> list[str]:
