@@ -52,3 +52,6 @@ agent/sessions/
 # Setup wizard deps
 scripts/node_modules/
 scripts/package-lock.json
+
+# Local Codex verification screenshots
+/.codex-*.png
