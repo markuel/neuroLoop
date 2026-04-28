@@ -11,18 +11,18 @@ Concatenates all segment MP4 files for an iteration into a single `final.mp4`. U
 
 ```bash
 python skills/stitch-video/scripts/stitch.py \
-  --segments sessions/{SESSION_ID}/iterations/{N}/segments/seg_00.mp4 \
-             sessions/{SESSION_ID}/iterations/{N}/segments/seg_01.mp4 \
-             sessions/{SESSION_ID}/iterations/{N}/segments/seg_02.mp4 \
-  --output sessions/{SESSION_ID}/iterations/{N}/final.mp4
+  --segments agent/sessions/{SESSION_ID}/iterations/{N}/segments/seg_00.mp4 \
+             agent/sessions/{SESSION_ID}/iterations/{N}/segments/seg_01.mp4 \
+             agent/sessions/{SESSION_ID}/iterations/{N}/segments/seg_02.mp4 \
+  --output agent/sessions/{SESSION_ID}/iterations/{N}/final.mp4
 ```
 
 Or use a glob pattern to pick them all up in order:
 
 ```bash
 python skills/stitch-video/scripts/stitch.py \
-  --segments-dir sessions/{SESSION_ID}/iterations/{N}/segments/ \
-  --output sessions/{SESSION_ID}/iterations/{N}/final.mp4
+  --segments-dir agent/sessions/{SESSION_ID}/iterations/{N}/segments/ \
+  --output agent/sessions/{SESSION_ID}/iterations/{N}/final.mp4
 ```
 
 When using `--segments-dir`, files are sorted numerically by the number in their filename (seg_00, seg_01, …).

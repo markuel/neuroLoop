@@ -2,6 +2,30 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { agentArtifactsStreamUrl, agentArtifactUrl } from '../../utils/api'
 import BrainHeatmap from './BrainHeatmap'
 
+const STAGE_STYLES = {
+  done: 'border-green-500/30 bg-green-500/10 text-green-300',
+  active: 'border-blue-500/30 bg-blue-500/10 text-blue-300',
+  waiting: 'border-gray-800 bg-gray-900/70 text-gray-500',
+}
+
+function statusFor(done, total, ready) {
+  if (total > 0 && done >= total) return 'done'
+  if (ready || done > 0) return 'active'
+  return 'waiting'
+}
+
+function stageLabel(state) {
+  if (state === 'done') return 'complete'
+  if (state === 'active') return 'running'
+  return 'waiting'
+}
+
+function compactPath(path) {
+  if (!path) return ''
+  const parts = path.split('/')
+  return parts.slice(-3).join('/')
+}
+
 // ------------------------------------------------------------------
 // Subscribe to the artifact SSE stream and build a per-iteration index.
 // Shape: { [iterationNumber]: { keyframesJson, segmentsJson, scoreJson,
@@ -72,13 +96,118 @@ function useJsonArtifact(sessionId, path) {
 }
 
 // ------------------------------------------------------------------
-// Keyframe + segment strip - thumbnails fill in as they land.
+// Live progress board - converts artifacts on disk into visible state.
+// ------------------------------------------------------------------
+function BuildProgress({ sessionData, iterData, keyframesJson, segmentsJson, scoreJson }) {
+  const plannedKeyframes = keyframesJson?.keyframes?.length ?? 0
+  const plannedSegments = segmentsJson?.segments?.length ?? Math.max(plannedKeyframes - 1, 0)
+  const keyframesDone = iterData?.keyframes?.length ?? 0
+  const segmentsDone = iterData?.segments?.length ?? 0
+  const hasKeyframePlan = Boolean(iterData?.keyframesJson)
+  const hasSegmentPlan = Boolean(iterData?.segmentsJson)
+
+  const stages = [
+    {
+      label: 'Prompt plan',
+      state: hasKeyframePlan && hasSegmentPlan ? 'done' : sessionData?.is_running ? 'active' : 'waiting',
+      detail: hasKeyframePlan || hasSegmentPlan
+        ? `${hasKeyframePlan ? 'keyframes' : 'keyframes pending'} / ${hasSegmentPlan ? 'segments' : 'segments pending'}`
+        : 'waiting for prompt JSON',
+    },
+    {
+      label: 'Keyframe images',
+      state: statusFor(keyframesDone, plannedKeyframes, hasKeyframePlan),
+      detail: plannedKeyframes > 0 ? `${keyframesDone}/${plannedKeyframes} frames` : 'waiting for plan',
+      percent: plannedKeyframes > 0 ? keyframesDone / plannedKeyframes : 0,
+    },
+    {
+      label: 'Video segments',
+      state: statusFor(segmentsDone, plannedSegments, hasSegmentPlan),
+      detail: plannedSegments > 0 ? `${segmentsDone}/${plannedSegments} clips` : 'waiting for segment plan',
+      percent: plannedSegments > 0 ? segmentsDone / plannedSegments : 0,
+    },
+    {
+      label: 'Stitched video',
+      state: iterData?.finalMp4 ? 'done' : segmentsDone > 0 ? 'active' : 'waiting',
+      detail: iterData?.finalMp4 ? compactPath(iterData.finalMp4) : 'waiting for clips',
+    },
+    {
+      label: 'TRIBE score',
+      state: scoreJson ? 'done' : iterData?.finalMp4 ? 'active' : 'waiting',
+      detail: scoreJson ? (scoreJson.overall_score ?? 0).toFixed(3) : 'waiting for final video',
+    },
+  ]
+
+  return (
+    <div className="grid grid-cols-1 gap-2 xl:grid-cols-5">
+      {stages.map(stage => (
+        <div
+          key={stage.label}
+          className={`rounded-lg border px-3 py-2.5 ${STAGE_STYLES[stage.state]}`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] uppercase tracking-wider opacity-70">{stage.label}</span>
+            <span className="text-[10px] font-mono">{stageLabel(stage.state)}</span>
+          </div>
+          <div className="mt-1 truncate text-xs font-medium">{stage.detail}</div>
+          {typeof stage.percent === 'number' && (
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-black/30">
+              <div
+                className="h-full rounded-full bg-current transition-all duration-500"
+                style={{ width: `${Math.min(100, Math.round(stage.percent * 100))}%` }}
+              />
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ArtifactList({ iterData }) {
+  if (!iterData) return null
+  const files = [
+    iterData.keyframesJson && { label: 'keyframes.json', path: iterData.keyframesJson },
+    iterData.segmentsJson && { label: 'segments.json', path: iterData.segmentsJson },
+    ...(iterData.keyframes || []).map(path => ({ label: 'image', path })),
+    ...(iterData.segments || []).map(path => ({ label: 'segment', path })),
+    iterData.finalMp4 && { label: 'final.mp4', path: iterData.finalMp4 },
+    iterData.scoreJson && { label: 'score.json', path: iterData.scoreJson },
+  ].filter(Boolean)
+
+  if (!files.length) return null
+
+  return (
+    <div className="rounded-lg border border-gray-800 bg-gray-950/70 p-3">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <h3 className="text-xs uppercase tracking-wider text-gray-500">Files produced</h3>
+        <span className="font-mono text-[10px] text-gray-600">{files.length}</span>
+      </div>
+      <div className="grid grid-cols-1 gap-1.5 lg:grid-cols-2">
+        {files.map(file => (
+          <div key={file.path} className="min-w-0 rounded border border-gray-800/80 bg-gray-900/60 px-2 py-1.5">
+            <div className="text-[10px] uppercase tracking-wider text-gray-500">{file.label}</div>
+            <div className="truncate font-mono text-[11px] text-gray-300" title={file.path}>
+              {compactPath(file.path)}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ------------------------------------------------------------------
+// Keyframe + segment storyboard - prompt cards fill in as artifacts land.
 // ------------------------------------------------------------------
 function KeyframeSegmentStrip({ sessionId, iterData, keyframesJson, segmentsJson }) {
   if (!keyframesJson?.keyframes?.length) {
     return (
-      <div className="text-xs text-gray-600 py-6 text-center">
-        Waiting for keyframe plan...
+      <div className="rounded-lg border border-dashed border-gray-800 bg-gray-950/60 px-4 py-8 text-center">
+        <div className="text-sm text-gray-500">Waiting for keyframe prompts</div>
+        <div className="mt-2 text-xs text-gray-700">
+          The storyboard will appear here as soon as the agent writes keyframes.json.
+        </div>
       </div>
     )
   }
@@ -95,68 +224,115 @@ function KeyframeSegmentStrip({ sessionId, iterData, keyframesJson, segmentsJson
   }
 
   return (
-    <div className="flex gap-2 overflow-x-auto pb-2">
+    <div className="grid grid-cols-1 gap-3">
       {keyframesJson.keyframes.map((kf, i) => {
         const imgPath = kfByIndex.get(kf.index ?? i)
         const segPath = segByIndex.get(kf.index ?? i) // segment i connects frame i to i+1
         const seg = segmentsJson?.segments?.[i]
         const isLastFrame = i === keyframesJson.keyframes.length - 1
         return (
-          <div key={i} className="flex items-stretch gap-2 flex-shrink-0">
-            <div className="w-40 flex flex-col gap-1">
-              <div className="aspect-square rounded-md overflow-hidden bg-gray-900 border border-gray-800 relative">
-                {imgPath ? (
-                  <img
-                    src={agentArtifactUrl(sessionId, imgPath)}
-                    alt={`frame ${kf.index ?? i}`}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-700">
+          <article key={i} className="rounded-lg border border-gray-800 bg-gray-950/70 p-3">
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-[190px_minmax(0,1fr)]">
+              <div className="min-w-0">
+                <div className="aspect-square overflow-hidden rounded-md border border-gray-800 bg-gray-900 relative">
+                  {imgPath ? (
+                    <img
+                      src={agentArtifactUrl(sessionId, imgPath)}
+                      alt={`frame ${kf.index ?? i}`}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-gray-600">
+                      <div className="h-8 w-8 rounded-full border border-gray-700 border-t-gray-500 animate-spin" />
+                      <span className="text-xs">image queued</span>
+                    </div>
+                  )}
+                  <div className="absolute left-2 top-2 rounded bg-black/70 px-2 py-1 font-mono text-[10px] text-gray-200">
                     frame {kf.index ?? i}
                   </div>
-                )}
-                <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/60 text-[10px] text-gray-300 font-mono">
-                  {kf.index ?? i}
+                  <div className={`absolute bottom-2 right-2 rounded px-2 py-1 text-[10px] ${
+                    imgPath ? 'bg-green-500/20 text-green-200' : 'bg-blue-500/20 text-blue-200'
+                  }`}>
+                    {imgPath ? 'image ready' : 'generating'}
+                  </div>
                 </div>
               </div>
-              <div className="text-[10px] text-gray-400 leading-tight line-clamp-3" title={kf.prompt}>
-                {kf.prompt}
-              </div>
-              {kf.mood && (
-                <div className="text-[10px] text-purple-400 italic truncate">{kf.mood}</div>
-              )}
-            </div>
 
-            {!isLastFrame && (
-              <div className="w-44 flex flex-col items-center justify-center text-center gap-1 border-l border-r border-gray-800/60 px-2">
-                {segPath ? (
-                  <video
-                    src={agentArtifactUrl(sessionId, segPath)}
-                    className="w-full aspect-video rounded-md bg-black object-cover"
-                    muted
-                    loop
-                    autoPlay
-                    playsInline
-                  />
-                ) : (
-                  <div className="w-full aspect-video rounded-md bg-gray-900 border border-gray-800 flex items-center justify-center text-[10px] text-gray-700">
-                    segment {i}
+              <div className="min-w-0 space-y-3">
+                <div>
+                  <div className="mb-1 flex items-center justify-between gap-3">
+                    <h4 className="text-sm font-medium text-white">Keyframe prompt</h4>
+                    {kf.mood && <span className="truncate text-xs italic text-purple-300">{kf.mood}</span>}
+                  </div>
+                  <p className="text-xs leading-relaxed text-gray-300">{kf.prompt}</p>
+                  {kf.dominant_elements?.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {kf.dominant_elements.map(item => (
+                        <span key={item} className="rounded border border-gray-800 bg-gray-900 px-2 py-1 text-[10px] text-gray-400">
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {kf.brain_targeting_notes && (
+                    <p className="mt-2 rounded border border-gray-800 bg-gray-900/70 px-2.5 py-2 text-[11px] leading-relaxed text-gray-500">
+                      {kf.brain_targeting_notes}
+                    </p>
+                  )}
+                </div>
+
+                {!isLastFrame && (
+                  <div className="rounded-md border border-gray-800 bg-gray-900/50 p-3">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <h5 className="text-xs uppercase tracking-wider text-blue-300">Segment {i}</h5>
+                      <span className={`rounded px-2 py-0.5 text-[10px] ${
+                        segPath ? 'bg-green-500/20 text-green-200' : 'bg-blue-500/20 text-blue-200'
+                      }`}>
+                        {segPath ? 'clip ready' : 'waiting for video'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-[180px_minmax(0,1fr)]">
+                      {segPath ? (
+                        <video
+                          src={agentArtifactUrl(sessionId, segPath)}
+                          className="aspect-video w-full rounded-md bg-black object-cover"
+                          muted
+                          loop
+                          autoPlay
+                          playsInline
+                        />
+                      ) : (
+                        <div className="flex aspect-video w-full items-center justify-center rounded-md border border-dashed border-gray-700 bg-gray-950 text-xs text-gray-600">
+                          video generation pending
+                        </div>
+                      )}
+                      {seg ? (
+                        <div className="min-w-0">
+                          <p className="text-xs leading-relaxed text-blue-100">{seg.motion_prompt}</p>
+                          {seg.camera_motion && (
+                            <p className="mt-2 text-[11px] italic text-gray-500">{seg.camera_motion}</p>
+                          )}
+                          {seg.target_regions?.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {seg.target_regions.map(region => (
+                                <span key={region} className="rounded border border-blue-500/20 bg-blue-500/10 px-2 py-1 font-mono text-[10px] text-blue-200">
+                                  {region}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-gray-600">
+                          Waiting for segments.json to describe the motion between this frame and the next.
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
-                {seg && (
-                  <>
-                    <div className="text-[10px] text-blue-300 leading-tight line-clamp-2" title={seg.motion_prompt}>
-                      to {seg.motion_prompt}
-                    </div>
-                    {seg.camera_motion && (
-                      <div className="text-[9px] text-gray-500 italic truncate">{seg.camera_motion}</div>
-                    )}
-                  </>
-                )}
               </div>
-            )}
-          </div>
+            </div>
+          </article>
         )
       })}
     </div>
@@ -306,9 +482,9 @@ export default function ArtifactCanvas({ sessionId, iteration, setIteration, ses
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Header - sparkline + iteration tabs */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800 flex-shrink-0">
+      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-800 flex-shrink-0">
         <ScoreSparkline iterations={iterations} target={sessionData?.params?.target_score ?? 0.85} />
-        <div className="flex items-center gap-1">
+        <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
           {availableIters.map(n => {
             const logEntry = iterations.find(it => it.iteration === n)
             const isSel = n === iteration
@@ -344,10 +520,19 @@ export default function ArtifactCanvas({ sessionId, iteration, setIteration, ses
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto p-4 space-y-5 min-h-0">
+        <section>
+          <BuildProgress
+            sessionData={sessionData}
+            iterData={cur}
+            keyframesJson={keyframesJson}
+            segmentsJson={segmentsJson}
+            scoreJson={scoreJson}
+          />
+        </section>
         {cur ? (
           <>
             <section>
-              <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-2">Iteration {iteration}: keyframes & segments</h3>
+              <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-2">Iteration {iteration}: storyboard</h3>
               <KeyframeSegmentStrip
                 sessionId={sessionId}
                 iterData={cur}
@@ -355,6 +540,8 @@ export default function ArtifactCanvas({ sessionId, iteration, setIteration, ses
                 segmentsJson={segmentsJson}
               />
             </section>
+
+            <ArtifactList iterData={cur} />
 
             {cur.finalMp4 && (
               <section>
@@ -381,7 +568,12 @@ export default function ArtifactCanvas({ sessionId, iteration, setIteration, ses
             )}
           </>
         ) : (
-          <div className="text-gray-700 text-sm text-center py-10">Waiting for first artifact...</div>
+          <div className="rounded-lg border border-dashed border-gray-800 bg-gray-950/60 px-4 py-10 text-center">
+            <div className="text-sm text-gray-500">Agent is preparing the first iteration</div>
+            <div className="mt-2 text-xs text-gray-700">
+              Prompt plans, files, images, clips, and scores will populate here as they are written.
+            </div>
+          </div>
         )}
       </div>
     </div>

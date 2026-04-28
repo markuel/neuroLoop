@@ -23,18 +23,22 @@ def generate_veo(start: str, end: str, prompt: str, duration: int, output: Path)
     from google.genai import types
 
     client = genai.Client()
+    model_id = os.environ.get("VEO_MODEL_ID", "veo-3.1-generate-preview")
 
     def load_image(path: str) -> types.Image:
-        return types.Image(image_bytes=Path(path).read_bytes(), mime_type="image/jpeg")
+        suffix = Path(path).suffix.lower()
+        mime_type = "image/png" if suffix == ".png" else "image/jpeg"
+        return types.Image(image_bytes=Path(path).read_bytes(), mime_type=mime_type)
 
     operation = client.models.generate_videos(
-        model="veo-3.0-generate-preview",
+        model=model_id,
         prompt=prompt,
         image=load_image(start),
         config=types.GenerateVideosConfig(
             duration_seconds=min(duration, 8),
             aspect_ratio="16:9",
             number_of_videos=1,
+            last_frame=load_image(end),
         ),
     )
 

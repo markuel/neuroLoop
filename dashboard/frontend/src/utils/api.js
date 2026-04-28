@@ -95,6 +95,10 @@ export function agentLogStreamUrl(sessionId) {
   return `/api/agent/sessions/${sessionId}/log-stream`
 }
 
+export function agentEventsStreamUrl(sessionId) {
+  return `/api/agent/sessions/${sessionId}/events-stream`
+}
+
 export function agentArtifactsStreamUrl(sessionId) {
   return `/api/agent/sessions/${sessionId}/artifacts-stream`
 }

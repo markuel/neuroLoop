@@ -11,7 +11,7 @@ load_dotenv()
 
 from fastapi import FastAPI, UploadFile, File, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from .storage import (
@@ -26,6 +26,7 @@ from .storage import (
     is_supported_upload_content_type,
     LOCAL_DATA_DIR,
 )
+from . import agent_archive
 from .mesh import get_fsaverage5_mesh_binary
 from .predict import start_prediction, get_job, list_jobs, get_atlas_data, load_manifest
 from .agent import (
@@ -35,6 +36,8 @@ from .agent import (
     list_sessions,
     tail_log,
     scan_artifacts,
+    tail_events,
+    record_claude_hook_event,
     create_draft_session,
     append_user_note,
     SESSIONS_DIR,
@@ -446,6 +449,7 @@ async def agent_upload_reference(session_id: str, file: UploadFile = File(...)):
     if len(data) > MAX_REFERENCE_BYTES:
         raise HTTPException(status_code=413, detail="Reference image is too large")
     dest.write_bytes(data)
+    agent_archive.sync_file(session_id, session_path, f"references/{safe_name}", kind="reference", event=True)
     return {"name": safe_name}
 
 
@@ -457,6 +461,13 @@ def agent_delete_reference(session_id: str, name: str):
         raise HTTPException(status_code=400, detail="Invalid session ID")
     if p.exists():
         p.unlink()
+        agent_archive.append_event(
+            session_id,
+            p.parents[1],
+            "reference.deleted",
+            f"Reference removed: {name}",
+            source="backend",
+        )
     return {"ok": True}
 
 
@@ -487,7 +498,13 @@ def agent_artifact(session_id: str, path: str):
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid path")
     if not target.exists() or not target.is_file():
-        raise HTTPException(status_code=404, detail="Not found")
+        try:
+            url = agent_archive.artifact_download_url(session_id, path)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid path")
+        if not url:
+            raise HTTPException(status_code=404, detail="Not found")
+        return RedirectResponse(url)
     return FileResponse(str(target))
 
 
@@ -505,6 +522,12 @@ async def agent_artifacts_stream(session_id: str):
         seen: set[str] = set()
         while True:
             artifacts = scan_artifacts(session_id)
+            try:
+                base = session_dir(session_id)
+                if base.exists():
+                    agent_archive.sync_files(session_id, base, artifacts, emit_events=True)
+            except ValueError:
+                pass
             new_items = [a for a in artifacts if a["path"] not in seen]
             for a in new_items:
                 seen.add(a["path"])
@@ -513,6 +536,12 @@ async def agent_artifacts_stream(session_id: str):
             if s and not s["is_running"]:
                 # One final pass after the process exits to catch anything flushed late
                 artifacts = scan_artifacts(session_id)
+                try:
+                    base = session_dir(session_id)
+                    if base.exists():
+                        agent_archive.sync_files(session_id, base, artifacts, emit_events=True)
+                except ValueError:
+                    pass
                 for a in artifacts:
                     if a["path"] not in seen:
                         seen.add(a["path"])
@@ -549,6 +578,22 @@ def agent_stop(session_id: str):
         raise HTTPException(status_code=404, detail="Running session not found")
     return {"stopped": ok}
 
+
+@app.post("/api/agent/hooks/claude")
+async def agent_claude_hook(request: Request):
+    """Receive Claude Code hook events for the active neuroLoop session."""
+    session_id = request.headers.get("x-neuroloop-session")
+    if not session_id:
+        return {"ok": False, "error": "missing neuroLoop session header"}
+    try:
+        payload = await request.json()
+        record_claude_hook_event(session_id, payload)
+    except ValueError:
+        return {"ok": False, "error": "invalid session"}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True}
+
 @app.get("/api/agent/sessions/{session_id}/video/{iteration}")
 def agent_video(session_id: str, iteration: int):
     try:
@@ -556,8 +601,55 @@ def agent_video(session_id: str, iteration: int):
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid session ID")
     if not video_path.exists():
-        raise HTTPException(status_code=404, detail="Video not found")
+        try:
+            url = agent_archive.artifact_download_url(session_id, f"iterations/{iteration}/final.mp4")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid path")
+        if not url:
+            raise HTTPException(status_code=404, detail="Video not found")
+        return RedirectResponse(url)
     return FileResponse(str(video_path), media_type="video/mp4")
+
+
+@app.get("/api/agent/sessions/{session_id}/events-stream")
+async def agent_events_stream(session_id: str):
+    """SSE stream of structured agent session events."""
+    try:
+        session_path = session_dir(session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session ID")
+    if get_session(session_id) is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    async def event_generator():
+        initial_session = get_session(session_id)
+        if not session_path.exists() or (
+            initial_session and not initial_session["is_running"] and not agent_archive.events_path(session_path).exists()
+        ):
+            for event in agent_archive.read_events(session_id):
+                yield f"data: {json.dumps(event)}\n\n"
+            yield "event: done\ndata: \n\n"
+            return
+
+        offset = 0
+        while True:
+            events, offset = tail_events(session_id, offset)
+            for event in events:
+                yield f"data: {json.dumps(event)}\n\n"
+            s = get_session(session_id)
+            if s and not s["is_running"] and not events:
+                yield "event: done\ndata: \n\n"
+                break
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/api/agent/sessions/{session_id}/log-stream")

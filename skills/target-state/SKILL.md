@@ -12,7 +12,7 @@ Converts a natural language description of a desired brain state into a JSON map
 ```bash
 python skills/target-state/scripts/translate.py \
   --description "heightened visual attention with a sense of spatial navigation" \
-  --output sessions/{SESSION_ID}/target_state.json
+  --output agent/sessions/{SESSION_ID}/target_state.json
 ```
 
 ## Output format
