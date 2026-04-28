@@ -11,6 +11,16 @@ const COARSE_COLORS = {
   'Default': '#6b7280',
 }
 
+const MIN_VISIBLE_PCT = 0.5
+
+function hexToRgba(hex, alpha) {
+  const value = hex.replace('#', '')
+  const r = parseInt(value.slice(0, 2), 16)
+  const g = parseInt(value.slice(2, 4), 16)
+  const b = parseInt(value.slice(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
 const REGION_DESCRIPTIONS = {
   // ── Primary Visual ──
   "V1": "First stage of vision — edges, contrast, orientation",
@@ -230,9 +240,14 @@ export default function RegionPanel() {
   const entries = useMemo(() => {
     if (!regions) return []
     return Object.entries(regions)
-      .map(([name, values]) => ({ name, value: values[timestep] ?? 0 }))
-      .sort((a, b) => b.value - a.value)
-  }, [regions, timestep])
+      .map(([name, values]) => {
+        const value = values[timestep] ?? 0
+        const pct = Math.max(0, Math.min(100, (value / scaleMax) * 100))
+        return { name, value, pct }
+      })
+      .filter(({ pct }) => pct >= MIN_VISIBLE_PCT)
+      .sort((a, b) => b.pct - a.pct)
+  }, [regions, timestep, scaleMax])
 
   if (!regions) {
     return (
@@ -248,23 +263,27 @@ export default function RegionPanel() {
     <div className="h-full bg-gray-950 flex flex-col overflow-hidden">
       {/* Header */}
       <div className="shrink-0 px-5 pt-3 pb-2 flex items-center justify-between border-b border-gray-800/50">
-        <span className="text-[11px] text-gray-400 font-semibold tracking-wide uppercase">
+        <span className="text-xs text-gray-300 font-semibold tracking-wide uppercase">
           Region Activity
         </span>
         {clickable && (
-          <span className="text-[10px] text-gray-600">
+          <span className="text-xs text-gray-600">
             {selectedRegion ? `Focused: ${selectedRegion}` : 'Click to focus'}
           </span>
         )}
       </div>
 
-      {/* Two-column scrollable grid */}
-      <div className="flex-1 overflow-y-auto px-3 py-2">
-        <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
-          {entries.map(({ name, value }) => {
+      {/* Ranked scrollable grid */}
+      <div className="flex-1 overflow-y-auto px-4 py-3">
+        {entries.length === 0 ? (
+          <div className="flex h-full items-center justify-center text-sm text-gray-600">
+            No active regions at this moment
+          </div>
+        ) : (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
+          {entries.map(({ name, pct }) => {
             const coarse = coarseGroups?.[name] || ''
             const color = COARSE_COLORS[coarse] || '#6b7280'
-            const pct = Math.max(0, Math.min(100, (value / scaleMax) * 100))
             const desc = REGION_DESCRIPTIONS[name]
             const isSelected = selectedRegion === name
 
@@ -285,35 +304,42 @@ export default function RegionPanel() {
                 type={clickable ? 'button' : undefined}
                 onClick={clickable ? () => setSelectedRegion(isSelected ? null : name) : undefined}
                 aria-pressed={clickable ? isSelected : undefined}
-                className={`w-full flex items-center gap-1.5 px-2 py-1 rounded transition-colors text-left ${
-                  clickable ? 'cursor-pointer hover:bg-gray-800/60 focus:bg-gray-800/60 focus:outline-none' : ''
-                } ${isSelected ? 'bg-gray-800 ring-1 ring-red-500/40' : ''}`}
+                className={`relative min-h-11 w-full overflow-hidden rounded-md border px-3 py-2 text-left transition-colors ${
+                  clickable ? 'cursor-pointer hover:border-gray-600 hover:bg-gray-900 focus:border-red-500/60 focus:outline-none' : ''
+                } ${isSelected ? 'border-red-500/50 bg-gray-900 ring-1 ring-red-500/30' : 'border-gray-800/70 bg-gray-950/80'}`}
               >
-                {/* Color dot */}
-                <span
-                  className="w-1.5 h-1.5 rounded-full shrink-0"
-                  style={{ backgroundColor: color, opacity: Math.max(0.3, pct / 100) }}
+                <div
+                  className="absolute inset-y-0 left-0"
+                  style={{
+                    width: `${pct}%`,
+                    background: `linear-gradient(90deg, ${hexToRgba(color, 0.28)}, ${hexToRgba(color, 0.08)})`,
+                  }}
+                  aria-hidden="true"
                 />
+                <div className="relative z-10 flex items-center gap-3">
+                  <span
+                    className="h-2.5 w-2.5 rounded-full shrink-0"
+                    style={{ backgroundColor: color, opacity: Math.max(0.5, pct / 100) }}
+                  />
 
-                {/* Labels: function description prominent, area code dimmed */}
-                <div className="flex-1 min-w-0 flex items-baseline gap-1.5">
-                  <span className="text-[11px] text-gray-200 truncate leading-tight">
-                    {label}
-                  </span>
-                  <span className="text-[9px] text-gray-600 shrink-0 font-mono">
-                    {name}
-                  </span>
-                </div>
-
-                {/* Bar + percentage */}
-                <div className="w-14 shrink-0 flex items-center gap-1">
-                  <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full"
-                      style={{ width: `${pct}%`, backgroundColor: color }}
-                    />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 items-baseline gap-2">
+                      <span className="truncate text-sm font-medium leading-5 text-gray-100">
+                        {label}
+                      </span>
+                      <span className="shrink-0 font-mono text-[10px] text-gray-500">
+                        {name}
+                      </span>
+                    </div>
+                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-800/80">
+                      <div
+                        className="h-full rounded-full"
+                        style={{ width: `${pct}%`, backgroundColor: color }}
+                      />
+                    </div>
                   </div>
-                  <span className="text-[9px] text-gray-500 font-mono w-6 text-right">
+
+                  <span className="w-12 shrink-0 text-right font-mono text-xs font-semibold text-gray-200">
                     {pct.toFixed(0)}%
                   </span>
                 </div>
@@ -321,6 +347,7 @@ export default function RegionPanel() {
             )
           })}
         </div>
+        )}
       </div>
     </div>
   )
