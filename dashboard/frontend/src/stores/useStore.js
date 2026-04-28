@@ -11,6 +11,7 @@ const useStore = create((set, get) => ({
   currentTime: 0,        // seconds (float) - wall-clock time in the stimulus
   duration: 0,           // total duration in seconds
   isPlaying: false,
+  isScrubbing: false,
   timestep: 0,           // integer index into predictions array (floor of exact)
   timestepFrac: 0,       // 0-1 fractional position between timestep and timestep+1
 
@@ -41,6 +42,7 @@ const useStore = create((set, get) => ({
     isPlaying: !s.isPlaying,
     selectedRegion: !s.isPlaying ? null : s.selectedRegion,
   })),
+  setScrubbing: (isScrubbing) => set({ isScrubbing }),
 
   // Mesh (loaded once)
   mesh: null,
@@ -97,7 +99,7 @@ const useStore = create((set, get) => ({
   reset: () => set((s) => {
     revokeMediaUrl(s.mediaUrl)
     return {
-      currentTime: 0, duration: 0, isPlaying: false, timestep: 0, timestepFrac: 0,
+      currentTime: 0, duration: 0, isPlaying: false, isScrubbing: false, timestep: 0, timestepFrac: 0,
       preds: null, regions: null, fineGroups: null, coarseGroups: null,
       regionVertices: null, selectedRegion: null,
       globalVmin: 0, globalVmax: 1, segmentTimes: null, hemodynamicLag: 5.0,

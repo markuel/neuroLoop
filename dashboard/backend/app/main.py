@@ -1,6 +1,7 @@
 # dashboard/backend/app/main.py
 import asyncio
 import json
+import mimetypes
 import os
 import uuid
 from contextlib import asynccontextmanager
@@ -18,6 +19,8 @@ from .storage import (
     presigned_upload_url,
     presigned_download_url,
     download_bytes,
+    download_byte_range,
+    object_size,
     list_prefix,
     get_local_file_path,
     is_supported_upload_content_type,
@@ -64,6 +67,56 @@ def _safe_reference_name(name: str) -> str:
     if not safe or safe in {".", ".."}:
         raise HTTPException(status_code=400, detail="Invalid reference name")
     return safe
+
+
+def _input_media_type(job: dict) -> str:
+    guessed, _encoding = mimetypes.guess_type(job.get("filename") or "")
+    if guessed:
+        return guessed
+    media_types = {
+        "video": "video/mp4",
+        "audio": "audio/mpeg",
+        "text": "text/plain",
+    }
+    return media_types.get(job.get("input_type"), "application/octet-stream")
+
+
+def _parse_range_header(range_header: str | None, size: int) -> tuple[int, int] | None:
+    if not range_header:
+        return None
+    unit, sep, raw_range = range_header.partition("=")
+    if sep != "=" or unit.strip().lower() != "bytes":
+        return None
+
+    first_range = raw_range.split(",", 1)[0].strip()
+    start_raw, sep, end_raw = first_range.partition("-")
+    if sep != "-":
+        return None
+
+    try:
+        if start_raw == "":
+            suffix_len = int(end_raw)
+            if suffix_len <= 0:
+                raise ValueError
+            start = max(size - suffix_len, 0)
+            end = size - 1
+        else:
+            start = int(start_raw)
+            end = int(end_raw) if end_raw else size - 1
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=416,
+            detail="Invalid byte range",
+            headers={"Content-Range": f"bytes */{size}"},
+        ) from exc
+
+    if start < 0 or start >= size or end < start:
+        raise HTTPException(
+            status_code=416,
+            detail="Requested range not satisfiable",
+            headers={"Content-Range": f"bytes */{size}"},
+        )
+    return start, min(end, size - 1)
 
 
 def _start_warmup():
@@ -270,23 +323,38 @@ def results(job_id: str):
 
 
 @app.get("/api/results/{job_id}/input")
-def result_input(job_id: str):
+def result_input(job_id: str, request: Request):
     job = get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     key = _recover_input_key(job)
     if not key:
         raise HTTPException(status_code=404, detail="Original input is not available for this job")
-    media_types = {
-        "video": "video/mp4",
-        "audio": "audio/mpeg",
-        "text": "text/plain",
+    media_type = _input_media_type(job)
+    try:
+        size = object_size(key)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Original input not found") from exc
+
+    byte_range = _parse_range_header(request.headers.get("range"), size)
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(size),
     }
     try:
+        if byte_range:
+            start, end = byte_range
+            data = download_byte_range(key, start, end)
+            headers.update({
+                "Content-Range": f"bytes {start}-{end}/{size}",
+                "Content-Length": str(len(data)),
+            })
+            return Response(content=data, status_code=206, media_type=media_type, headers=headers)
+
         data = download_bytes(key)
     except Exception as exc:
         raise HTTPException(status_code=404, detail="Original input not found") from exc
-    return Response(content=data, media_type=media_types.get(job.get("input_type"), "application/octet-stream"))
+    return Response(content=data, media_type=media_type, headers=headers)
 
 
 @app.get("/api/results/{job_id}/{artifact_name}")

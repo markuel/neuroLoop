@@ -12,9 +12,11 @@ export default function Timeline() {
   const isPlaying = useStore((s) => s.isPlaying)
   const togglePlaying = useStore((s) => s.togglePlaying)
   const setCurrentTime = useStore((s) => s.setCurrentTime)
+  const setScrubbing = useStore((s) => s.setScrubbing)
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0
   const clampedTime = duration > 0 ? Math.min(currentTime, duration) : 0
+  const seekTo = (e) => setCurrentTime(Number(e.currentTarget.value))
 
   return (
     <div className="h-10 bg-gray-950 border-t border-b border-gray-800 flex items-center gap-3 px-4">
@@ -33,7 +35,15 @@ export default function Timeline() {
         step="0.01"
         value={clampedTime}
         disabled={duration <= 0}
-        onChange={(e) => setCurrentTime(Number(e.target.value))}
+        onPointerDown={() => setScrubbing(true)}
+        onPointerUp={(e) => {
+          seekTo(e)
+          setScrubbing(false)
+        }}
+        onPointerCancel={() => setScrubbing(false)}
+        onBlur={() => setScrubbing(false)}
+        onInput={seekTo}
+        onChange={seekTo}
         aria-label="Seek playback"
         aria-valuetext={`${formatTime(clampedTime)} of ${formatTime(duration)}`}
         className="flex-1 h-1 rounded cursor-pointer accent-red-500 disabled:cursor-default"

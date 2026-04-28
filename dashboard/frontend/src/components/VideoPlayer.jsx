@@ -5,6 +5,7 @@ export default function VideoPlayer() {
   const videoRef = useRef()
   const mediaUrl = useStore((s) => s.mediaUrl)
   const isPlaying = useStore((s) => s.isPlaying)
+  const isScrubbing = useStore((s) => s.isScrubbing)
   const currentTime = useStore((s) => s.currentTime)
   const setDuration = useStore((s) => s.setDuration)
   const setCurrentTime = useStore((s) => s.setCurrentTime)
@@ -21,15 +22,15 @@ export default function VideoPlayer() {
 
   useEffect(() => {
     const video = videoRef.current
-    if (!video || isPlaying) return
-    if (Math.abs(video.currentTime - currentTime) > 0.3) {
+    if (!video) return
+    if (Math.abs(video.currentTime - currentTime) > 0.08) {
       video.currentTime = currentTime
     }
-  }, [currentTime, isPlaying])
+  }, [currentTime])
 
   function handleTimeUpdate() {
     const video = videoRef.current
-    if (!video || !isPlaying) return
+    if (!video || isScrubbing || !isPlaying) return
     setCurrentTime(video.currentTime)
   }
 
