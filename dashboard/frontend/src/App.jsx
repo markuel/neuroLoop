@@ -18,7 +18,7 @@ async function fetchResult(url, type) {
   return type === 'binary' ? res.arrayBuffer() : res.json()
 }
 
-function StatusPill({ label, value, tone = 'muted' }) {
+function StatusPill({ label, value, tone = 'muted', className = '' }) {
   const tones = {
     ok: 'border-green-500/30 bg-green-500/10 text-green-300',
     warn: 'border-yellow-500/30 bg-yellow-500/10 text-yellow-300',
@@ -26,37 +26,62 @@ function StatusPill({ label, value, tone = 'muted' }) {
     muted: 'border-gray-800 bg-gray-900 text-gray-500',
   }
   return (
-    <div className={`rounded-md border px-2.5 py-1.5 ${tones[tone]}`}>
+    <div className={`rounded-md border px-2.5 py-1.5 ${tones[tone]} ${className}`}>
       <span className="text-[10px] uppercase tracking-wider opacity-70">{label}</span>
       <span className="ml-2 text-xs font-medium">{value}</span>
     </div>
   )
 }
 
+function MeshLoadPill() {
+  const mesh = useStore((s) => s.mesh)
+  const [dismissed, setDismissed] = useState(false)
+  const [removed, setRemoved] = useState(false)
+
+  useEffect(() => {
+    if (!mesh) return
+    const dismissTimeout = window.setTimeout(() => setDismissed(true), 2400)
+    const removeTimeout = window.setTimeout(() => setRemoved(true), 3100)
+    return () => {
+      window.clearTimeout(dismissTimeout)
+      window.clearTimeout(removeTimeout)
+    }
+  }, [mesh])
+
+  if (removed) return null
+
+  return (
+    <div
+      className={`overflow-hidden transition-all duration-700 ease-in-out ${
+        dismissed ? 'max-w-0 opacity-0 scale-95' : 'max-w-56 opacity-100 scale-100'
+      }`}
+    >
+      <StatusPill
+        label="Brain Mesh"
+        value={mesh ? 'Ready' : 'Loading'}
+        tone={mesh ? 'ok' : 'warn'}
+        className="whitespace-nowrap"
+      />
+    </div>
+  )
+}
+
 function AnalyzeStatusStrip() {
   const inputType = useStore((s) => s.inputType)
-  const mesh = useStore((s) => s.mesh)
   const preds = useStore((s) => s.preds)
-  const regions = useStore((s) => s.regions)
-  const regionVertices = useStore((s) => s.regionVertices)
   const timestep = useStore((s) => s.timestep)
   const timestepFrac = useStore((s) => s.timestepFrac)
   const currentTime = useStore((s) => s.currentTime)
   const duration = useStore((s) => s.duration)
-  const globalVmin = useStore((s) => s.globalVmin)
-  const globalVmax = useStore((s) => s.globalVmax)
 
   const smoothFrame = preds ? Math.min(preds.length - 1, timestep + timestepFrac) : 0
   return (
     <div className="h-12 border-b border-gray-800 bg-gray-950/95 px-4 flex items-center gap-2 overflow-x-auto">
       <StatusPill label="Input" value={inputType ? inputType.toUpperCase() : 'None'} tone={inputType ? 'ok' : 'muted'} />
-      <StatusPill label="Brain Mesh" value={mesh ? `${mesh.nVertices.toLocaleString()} vertices` : 'Loading'} tone={mesh ? 'ok' : 'warn'} />
+      <MeshLoadPill />
       <StatusPill label="Predictions" value={preds ? `${preds.length} frames` : 'Not loaded'} tone={preds ? 'ok' : 'muted'} />
-      <StatusPill label="Atlas" value={regionVertices ? `${Object.keys(regionVertices).length} regions` : 'Loading'} tone={regionVertices ? 'ok' : 'warn'} />
-      <StatusPill label="Regions" value={regions ? 'Ready' : 'Waiting'} tone={regions ? 'ok' : 'muted'} />
       <StatusPill label="Time" value={`${currentTime.toFixed(1)}s / ${(duration || 0).toFixed(1)}s`} tone={duration > 0 ? 'ok' : 'muted'} />
       <StatusPill label="Brain Frame" value={preds ? smoothFrame.toFixed(2) : '--'} tone={preds ? 'ok' : 'muted'} />
-      <StatusPill label="Scale" value={preds ? `${globalVmin.toFixed(2)}..${globalVmax.toFixed(2)}` : '--'} tone={preds ? 'ok' : 'muted'} />
     </div>
   )
 }

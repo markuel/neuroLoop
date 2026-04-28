@@ -55,6 +55,18 @@ def download_bytes(key: str) -> bytes:
     return _s3_download_bytes(key)
 
 
+def object_size(key: str) -> int:
+    if STORAGE_MODE == "local":
+        return _local_object_size(key)
+    return _s3_object_size(key)
+
+
+def download_byte_range(key: str, start: int, end: int) -> bytes:
+    if STORAGE_MODE == "local":
+        return _local_download_byte_range(key, start, end)
+    return _s3_download_byte_range(key, start, end)
+
+
 def list_prefix(prefix: str) -> list[str]:
     if STORAGE_MODE == "local":
         return _local_list_prefix(prefix)
@@ -91,6 +103,16 @@ def _local_upload_bytes(data: bytes, key: str) -> None:
 
 def _local_download_bytes(key: str) -> bytes:
     return get_local_file_path(key).read_bytes()
+
+
+def _local_object_size(key: str) -> int:
+    return get_local_file_path(key).stat().st_size
+
+
+def _local_download_byte_range(key: str, start: int, end: int) -> bytes:
+    with get_local_file_path(key).open("rb") as f:
+        f.seek(start)
+        return f.read(end - start + 1)
 
 
 def _local_list_prefix(prefix: str) -> list[str]:
@@ -173,6 +195,18 @@ def _s3_upload_bytes(data: bytes, key: str, content_type: str = "application/oct
 
 def _s3_download_bytes(key: str) -> bytes:
     return _s3_client().get_object(Bucket=S3_BUCKET, Key=key)["Body"].read()
+
+
+def _s3_object_size(key: str) -> int:
+    return int(_s3_client().head_object(Bucket=S3_BUCKET, Key=key)["ContentLength"])
+
+
+def _s3_download_byte_range(key: str, start: int, end: int) -> bytes:
+    return _s3_client().get_object(
+        Bucket=S3_BUCKET,
+        Key=key,
+        Range=f"bytes={start}-{end}",
+    )["Body"].read()
 
 
 def _s3_list_prefix(prefix: str) -> list[str]:
