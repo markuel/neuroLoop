@@ -7,6 +7,7 @@ Set STORAGE_MODE=s3 (default) for S3-backed storage.
 import os
 import shutil
 import uuid
+import mimetypes
 from pathlib import Path
 from functools import lru_cache
 
@@ -41,6 +42,12 @@ def download_file(key: str, local_path: str) -> str:
     if STORAGE_MODE == "local":
         return _local_download_file(key, local_path)
     return _s3_download_file(key, local_path)
+
+
+def upload_file_from_path(local_path: str | Path, key: str, content_type: str | None = None) -> None:
+    if STORAGE_MODE == "local":
+        return _local_upload_file_from_path(local_path, key)
+    return _s3_upload_file_from_path(local_path, key, content_type)
 
 
 def upload_bytes(data: bytes, key: str, content_type: str = "application/octet-stream") -> None:
@@ -93,6 +100,12 @@ def _local_download_file(key: str, local_path: str) -> str:
     src = get_local_file_path(key)
     shutil.copy2(str(src), local_path)
     return local_path
+
+
+def _local_upload_file_from_path(local_path: str | Path, key: str) -> None:
+    dest = get_local_file_path(key)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(str(local_path), str(dest))
 
 
 def _local_upload_bytes(data: bytes, key: str) -> None:
@@ -189,6 +202,16 @@ def _s3_download_file(key: str, local_path: str) -> str:
     return local_path
 
 
+def _s3_upload_file_from_path(local_path: str | Path, key: str, content_type: str | None = None) -> None:
+    guessed = content_type or mimetypes.guess_type(str(local_path))[0] or "application/octet-stream"
+    _s3_client().upload_file(
+        str(local_path),
+        S3_BUCKET,
+        key,
+        ExtraArgs={"ContentType": guessed},
+    )
+
+
 def _s3_upload_bytes(data: bytes, key: str, content_type: str = "application/octet-stream") -> None:
     _s3_client().put_object(Bucket=S3_BUCKET, Key=key, Body=data, ContentType=content_type)
 
@@ -210,5 +233,14 @@ def _s3_download_byte_range(key: str, start: int, end: int) -> bytes:
 
 
 def _s3_list_prefix(prefix: str) -> list[str]:
-    resp = _s3_client().list_objects_v2(Bucket=S3_BUCKET, Prefix=prefix)
-    return [obj["Key"] for obj in resp.get("Contents", [])]
+    keys: list[str] = []
+    continuation = None
+    while True:
+        kwargs = {"Bucket": S3_BUCKET, "Prefix": prefix}
+        if continuation:
+            kwargs["ContinuationToken"] = continuation
+        resp = _s3_client().list_objects_v2(**kwargs)
+        keys.extend(obj["Key"] for obj in resp.get("Contents", []))
+        if not resp.get("IsTruncated"):
+            return keys
+        continuation = resp.get("NextContinuationToken")

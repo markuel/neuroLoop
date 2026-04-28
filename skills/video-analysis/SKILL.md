@@ -11,9 +11,9 @@ Runs TRIBE v2 on a generated video and compares the predicted brain activations 
 
 ```bash
 python skills/video-analysis/scripts/score.py \
-  --video sessions/{SESSION_ID}/iterations/{N}/final.mp4 \
-  --target sessions/{SESSION_ID}/target_state.json \
-  --output sessions/{SESSION_ID}/iterations/{N}/score.json \
+  --video agent/sessions/{SESSION_ID}/iterations/{N}/final.mp4 \
+  --target agent/sessions/{SESSION_ID}/target_state.json \
+  --output agent/sessions/{SESSION_ID}/iterations/{N}/score.json \
   --segment-duration {clip_seconds}
 ```
 

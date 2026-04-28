@@ -44,11 +44,30 @@ A keyframe image needs to do two things simultaneously: (1) target the desired b
 
 ## Running the script
 
+For a full iteration, prefer the batch script. It reads `keyframes.json`
+and generates the frame files in parallel:
+
+```bash
+python skills/image-gen/scripts/generate_batch.py \
+  --model {openai|gemini|grok} \
+  --keyframes-json agent/sessions/{SESSION_ID}/iterations/{N}/keyframes.json \
+  --output-dir agent/sessions/{SESSION_ID}/iterations/{N}/keyframes \
+  --resolution 1024x1024 \
+  --max-workers 4
+```
+
+Use `--max-workers` to respect provider limits. Start with 4 concurrent
+images unless the provider is rate limiting. The script writes
+`frame_00.jpg`, `frame_01.jpg`, etc. as each image completes, so the
+dashboard can show partial progress.
+
+For one-off or surgical frame generation, use the single-image script:
+
 ```bash
 python skills/image-gen/scripts/generate.py \
   --model {openai|gemini|grok} \
   --prompt "your prompt here" \
-  --output sessions/{SESSION_ID}/iterations/{N}/keyframes/frame_{NN}.jpg \
+  --output agent/sessions/{SESSION_ID}/iterations/{N}/keyframes/frame_{NN}.jpg \
   --resolution 1024x1024
 ```
 
@@ -56,15 +75,15 @@ The script reads the appropriate API key from the environment automatically.
 
 ## Reference images (product photos, character refs, style refs)
 
-If the session has reference images in `sessions/{SESSION_ID}/references/`, pass them via `--reference-image`. The model will incorporate the referenced subject/style into the generated keyframe. Pass the flag multiple times to supply multiple references:
+If the session has reference images in `agent/sessions/{SESSION_ID}/references/`, pass them via `--reference-image`. The model will incorporate the referenced subject/style into the generated keyframe. Pass the flag multiple times to supply multiple references:
 
 ```bash
-python skills/image-gen/scripts/generate.py \
+python skills/image-gen/scripts/generate_batch.py \
   --model openai \
-  --prompt "the character holding the product in a neon-lit city at night" \
-  --output .../frame_03.jpg \
-  --reference-image sessions/{SESSION_ID}/references/product.jpg \
-  --reference-image sessions/{SESSION_ID}/references/character.png
+  --keyframes-json agent/sessions/{SESSION_ID}/iterations/{N}/keyframes.json \
+  --output-dir agent/sessions/{SESSION_ID}/iterations/{N}/keyframes \
+  --reference-image agent/sessions/{SESSION_ID}/references/product.jpg \
+  --reference-image agent/sessions/{SESSION_ID}/references/character.png
 ```
 
 **Which references to pass to which frames:**

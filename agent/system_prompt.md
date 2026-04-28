@@ -21,8 +21,10 @@ At the start of every session you will be given:
 
 **Workspace root**: `agent/sessions/{SESSION_ID}/`
 
+All session file paths are relative to the repository root and must start with `agent/sessions/{SESSION_ID}/`. Do not create a separate repo-root `sessions/` directory.
+
 ```
-sessions/{SESSION_ID}/
+agent/sessions/{SESSION_ID}/
 ├── target_state.json        ← region map from target-state skill
 ├── iteration_log.tsv        ← running record of every iteration
 ├── user_notes.md            ← optional steering notes added by the user mid-session
@@ -54,7 +56,7 @@ Think of the brief as the genre and the brain target as the cinematography. You 
 
 Use the **target-state** skill to translate `TARGET_DESCRIPTION` into a concrete region map.
 
-Save the result to `sessions/{SESSION_ID}/target_state.json`.
+Save the result to `agent/sessions/{SESSION_ID}/target_state.json`.
 
 Read the result and keep it in mind throughout the session — it is the ground truth you are optimizing toward.
 
@@ -75,11 +77,13 @@ Use this to know how many keyframes and segments to generate. The registry also 
 
 ## Step 3 — Initialize the iteration log
 
-Create `sessions/{SESSION_ID}/iteration_log.tsv` with this header:
+Create `agent/sessions/{SESSION_ID}/iteration_log.tsv` with this header:
 
 ```
 iteration	score	status	notes
 ```
+
+Also append a short Markdown note to `agent/sessions/{SESSION_ID}/journal.md` whenever you start an iteration, make a keep/discard decision, hit an error, or change strategy. Keep this journal concise and factual. The backend separately records structured `events.jsonl`; the journal is for humans and future agents to understand why the loop moved the way it did.
 
 ---
 
@@ -90,6 +94,8 @@ Run this loop until `MAX_ITERATIONS` is reached or `score >= TARGET_SCORE`. Neve
 ### A. Generate keyframe prompt JSON
 
 Think carefully about what visual content will drive the target brain state. Read `agent/model_registry.yaml` to understand the chosen image model's strengths. Then read the image-gen skill.
+
+Append a one-paragraph plan for this iteration to `agent/sessions/{SESSION_ID}/journal.md` before writing the prompt JSON.
 
 Generate a JSON object with this structure:
 
@@ -111,7 +117,7 @@ Validate the JSON before proceeding — every keyframe must have index, prompt, 
 
 Think about visual cohesion: the frames should tell a story, with smooth conceptual transitions between them. Adjacent frames should be visually related enough that a video generation model can interpolate between them.
 
-Save to `sessions/{SESSION_ID}/iterations/{N}/keyframes.json`.
+Save to `agent/sessions/{SESSION_ID}/iterations/{N}/keyframes.json`.
 
 ### B. Generate video segment prompt JSON
 
@@ -140,7 +146,7 @@ Think about which motion types activate which brain regions:
 - Spatial navigation, scenes → RSC, PHA1-3, hippocampus
 - Language/text in scene → STSva, STSda, TE1a
 
-Validate the JSON. Save to `sessions/{SESSION_ID}/iterations/{N}/segments.json`.
+Validate the JSON. Save to `agent/sessions/{SESSION_ID}/iterations/{N}/segments.json`.
 
 ### C. Generate keyframe images
 
@@ -148,7 +154,18 @@ Use the **image-gen** skill. Read the reference file for the chosen `IMAGE_MODEL
 
 If `REFERENCE_IMAGES` is non-empty, pass each reference path via `--reference-image` to the generate script. This tells the model to include that subject/product/style in the keyframe. Pick which references apply to which keyframes — the same product photo typically goes into every frame that features it; a character reference goes into every frame that character appears in.
 
-Generate each keyframe image. Save them as `keyframes/frame_00.jpg`, `frame_01.jpg`, etc.
+Generate keyframe images in parallel with the image-gen batch script whenever you are producing a full iteration:
+
+```
+python skills/image-gen/scripts/generate_batch.py \
+  --model {IMAGE_MODEL} \
+  --keyframes-json agent/sessions/{SESSION_ID}/iterations/{N}/keyframes.json \
+  --output-dir agent/sessions/{SESSION_ID}/iterations/{N}/keyframes \
+  --resolution 1024x1024 \
+  --max-workers 4
+```
+
+Use a lower `--max-workers` value if the provider rate limits. The batch script saves `keyframes/frame_00.jpg`, `frame_01.jpg`, etc. as each image completes. For a surgical edit where only one frame needs replacement, use the single-image script from the image-gen skill.
 
 ### D. Generate video segments
 
@@ -200,9 +217,11 @@ Append to `iteration_log.tsv`:
 {N}	{score}	{keep|discard|surgical}	{one sentence: what you tried and why}
 ```
 
+Append the same decision, plus the main reason, to `journal.md`.
+
 ### I. Plan next iteration
 
-**First, check `sessions/{SESSION_ID}/user_notes.md`.** The user can append steering notes to this file at any time — new characters to include, directions the loop is drifting wrong, things to emphasize. Read it fresh every iteration (its contents may have changed since the last one) and treat any new note as a higher priority than your own iteration plan.
+**First, check `agent/sessions/{SESSION_ID}/user_notes.md`.** Use this path exactly; do not read or write a repo-root `sessions/` directory.
 
 Then think about what to change. Consider:
 - Which brain regions are most under-target? Check `region_deltas` in score.json — negative values are regions under-firing. What visual content would drive those regions *while staying within the creative brief*?

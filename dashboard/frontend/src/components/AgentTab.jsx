@@ -43,6 +43,8 @@ function StatusPill({ label, value, tone = 'muted' }) {
     live: 'border-green-500/30 bg-green-500/10 text-green-300',
     ready: 'border-blue-500/30 bg-blue-500/10 text-blue-300',
     done: 'border-gray-700 bg-gray-900 text-gray-300',
+    warn: 'border-yellow-500/30 bg-yellow-500/10 text-yellow-300',
+    error: 'border-red-500/30 bg-red-500/10 text-red-300',
     muted: 'border-gray-800 bg-gray-900 text-gray-500',
   }
 
@@ -61,13 +63,21 @@ function GenerateStatusStrip({ sessionId, session }) {
   const maxIterations = params.max_iterations ?? '?'
   const currentIteration = session?.current_iteration ?? 0
   const step = session?.step ? (STEP_LABELS[session.step] || session.step) : 'Ready'
+  const status = session?.status || (isRunning ? 'running' : hasSession ? 'review' : 'setup')
+  const statusTone = isRunning
+    ? 'live'
+    : ['failed', 'stopped'].includes(status)
+      ? 'error'
+      : status === 'partial'
+        ? 'warn'
+        : hasSession ? 'done' : 'ready'
 
   return (
     <div className="h-12 border-b border-gray-800 bg-gray-950/95 px-4 flex items-center gap-2 overflow-x-auto">
       <StatusPill
-        label="Mode"
-        value={!hasSession ? 'Setup' : isRunning ? 'Running' : 'Review'}
-        tone={!hasSession ? 'ready' : isRunning ? 'live' : 'done'}
+        label="Status"
+        value={!hasSession ? 'Setup' : status}
+        tone={statusTone}
       />
       <StatusPill label="Step" value={step} tone={isRunning ? 'live' : hasSession ? 'done' : 'muted'} />
       <StatusPill
@@ -97,13 +107,15 @@ function GenerateStatusStrip({ sessionId, session }) {
 function LiveSessionHeader({ session, onStop }) {
   const params = session.params || {}
   const isRunning = session.is_running
+  const status = session.status || (isRunning ? 'running' : 'complete')
+  const counts = session.artifact_counts || {}
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0">
           {isRunning && <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse flex-shrink-0" />}
           <span className="text-sm font-medium text-white truncate">
-            {isRunning ? (STEP_LABELS[session.step] || session.step) : 'Session complete'}
+            {isRunning ? (STEP_LABELS[session.step] || session.step) : session.status_detail || `Session ${status}`}
           </span>
           {session.current_iteration > 0 && (
             <span className="text-xs text-gray-500 flex-shrink-0">
@@ -130,6 +142,15 @@ function LiveSessionHeader({ session, onStop }) {
         <div>
           <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-0.5">Creative brief</div>
           <p className="text-xs text-gray-400 italic line-clamp-3">{params.creative_brief}</p>
+        </div>
+      )}
+      {session.archive_prefix && (
+        <div>
+          <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-0.5">Archive</div>
+          <p className="truncate font-mono text-[10px] text-gray-500">{session.archive_prefix}</p>
+          <p className="mt-1 text-[10px] text-gray-600">
+            {counts.keyframes ?? 0} frames / {counts.segments ?? 0} clips / {counts.logs ?? 0} logs
+          </p>
         </div>
       )}
       {session.best_score > 0 && (
@@ -260,8 +281,9 @@ export default function AgentTab() {
                       {s.params?.creative_brief || s.params?.target_description || s.session_id}
                     </div>
                     <div className="text-gray-600 mt-0.5">
-                      {s.iterations?.length ?? 0} iter
+                      {s.current_iteration ?? s.iterations?.length ?? 0} iter
                       {s.best_score > 0 && ` - best ${s.best_score.toFixed(3)}`}
+                      {s.status && ` - ${s.status}`}
                     </div>
                   </button>
                 ))}
@@ -271,7 +293,7 @@ export default function AgentTab() {
         </div>
 
         {/* Center - live artifact canvas */}
-        <div className="flex-1 flex flex-col min-h-0 border-r border-gray-800">
+        <div className="flex-1 min-w-0 flex flex-col min-h-0 border-r border-gray-800">
           <ArtifactCanvas
             sessionId={activeSessionId}
             iteration={selectedIteration}

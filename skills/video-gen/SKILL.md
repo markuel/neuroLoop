@@ -44,10 +44,10 @@ Slow tracking shot through ancient forest undergrowth, shafts of light shifting 
 ```bash
 python skills/video-gen/scripts/generate.py \
   --model {veo|seeddance|grok-video} \
-  --start-frame sessions/{SESSION_ID}/iterations/{N}/keyframes/frame_NN.jpg \
-  --end-frame sessions/{SESSION_ID}/iterations/{N}/keyframes/frame_MM.jpg \
+  --start-frame agent/sessions/{SESSION_ID}/iterations/{N}/keyframes/frame_NN.jpg \
+  --end-frame agent/sessions/{SESSION_ID}/iterations/{N}/keyframes/frame_MM.jpg \
   --motion-prompt "your motion prompt here" \
-  --output sessions/{SESSION_ID}/iterations/{N}/segments/seg_NN.mp4 \
+  --output agent/sessions/{SESSION_ID}/iterations/{N}/segments/seg_NN.mp4 \
   --duration {clip_seconds}
 ```
 
