@@ -1,6 +1,7 @@
 """Agent session management — spawn, track, and stop Claude Code agent loops."""
 
 import os
+import re
 import subprocess
 import time
 import uuid
@@ -8,8 +9,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 SESSIONS_DIR = Path(__file__).resolve().parents[3] / "agent" / "sessions"
+SESSION_ID_PATTERN = re.compile(r"^session_\d{8}_\d{6}_[0-9a-f]{4}$")
 
 _sessions: dict[str, dict] = {}
+
+
+def _close_log_file(mem: dict) -> None:
+    log_file = mem.get("log_file")
+    if log_file and not log_file.closed:
+        log_file.close()
 
 
 def _build_initial_message(session_id: str, params: dict, references: list[str]) -> str:
@@ -37,16 +45,22 @@ def _new_session_id() -> str:
     return f"session_{ts}_{uuid.uuid4().hex[:4]}"
 
 
+def session_dir(session_id: str) -> Path:
+    if not SESSION_ID_PATTERN.fullmatch(session_id):
+        raise ValueError(f"Invalid session_id: {session_id}")
+    return SESSIONS_DIR / session_id
+
+
 def create_draft_session() -> str:
     """Create an empty session directory (references/) so the UI can upload files before start."""
     session_id = _new_session_id()
-    session_dir = SESSIONS_DIR / session_id
-    (session_dir / "references").mkdir(parents=True, exist_ok=True)
+    session_path = session_dir(session_id)
+    (session_path / "references").mkdir(parents=True, exist_ok=True)
     return session_id
 
 
 def list_references(session_id: str) -> list[str]:
-    ref_dir = SESSIONS_DIR / session_id / "references"
+    ref_dir = session_dir(session_id) / "references"
     if not ref_dir.exists():
         return []
     return sorted(p.name for p in ref_dir.iterdir() if p.is_file())
@@ -56,24 +70,28 @@ def start_session(params: dict, session_id: str | None = None) -> str:
     if session_id is None:
         session_id = _new_session_id()
 
-    session_dir = SESSIONS_DIR / session_id
-    session_dir.mkdir(parents=True, exist_ok=True)
-    (session_dir / "references").mkdir(parents=True, exist_ok=True)
+    session_path = session_dir(session_id)
+    session_path.mkdir(parents=True, exist_ok=True)
+    (session_path / "references").mkdir(parents=True, exist_ok=True)
 
     references = list_references(session_id)
 
-    log_path = session_dir / "claude_output.log"
+    log_path = session_path / "claude_output.log"
     log_file = open(log_path, "w")
 
     repo_root = Path(__file__).resolve().parents[3]
     message = _build_initial_message(session_id, params, references)
 
-    proc = subprocess.Popen(
-        ["claude", "-p", message],
-        cwd=str(repo_root),
-        stdout=log_file,
-        stderr=subprocess.STDOUT,
-    )
+    try:
+        proc = subprocess.Popen(
+            ["claude", "-p", message],
+            cwd=str(repo_root),
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+        )
+    except OSError:
+        log_file.close()
+        raise
 
     _sessions[session_id] = {
         "session_id": session_id,
@@ -140,17 +158,22 @@ def _read_iteration_log(session_dir: Path) -> list[dict]:
 
 
 def get_session(session_id: str) -> dict | None:
-    session_dir = SESSIONS_DIR / session_id
-    if not session_dir.exists():
+    try:
+        session_path = session_dir(session_id)
+    except ValueError:
+        return None
+    if not session_path.exists():
         return None
 
     mem = _sessions.get(session_id, {})
     proc = mem.get("process")
 
     is_running = proc is not None and proc.poll() is None
+    if proc is not None and not is_running:
+        _close_log_file(mem)
 
-    step, current_iteration = _infer_step(session_dir)
-    iterations = _read_iteration_log(session_dir)
+    step, current_iteration = _infer_step(session_path)
+    iterations = _read_iteration_log(session_path)
     best_score = max((it["score"] for it in iterations), default=0.0)
     references = list_references(session_id)
 
@@ -164,7 +187,7 @@ def get_session(session_id: str) -> dict | None:
         "best_score": round(best_score, 4),
         "iterations": iterations,
         "references": references,
-        "has_started": (session_dir / "claude_output.log").exists(),
+        "has_started": (session_path / "claude_output.log").exists(),
     }
 
 
@@ -181,8 +204,10 @@ def stop_session(session_id: str) -> bool:
 
 def tail_log(session_id: str, offset: int = 0):
     """Yield new log bytes starting from `offset`. Returns (new_content, new_offset)."""
-    session_dir = SESSIONS_DIR / session_id
-    log_path = session_dir / "claude_output.log"
+    try:
+        log_path = session_dir(session_id) / "claude_output.log"
+    except ValueError:
+        return "", offset
     if not log_path.exists():
         return "", offset
     with open(log_path, "r", errors="replace") as f:
@@ -210,8 +235,10 @@ def scan_artifacts(session_id: str) -> list[dict]:
     Each entry has: {iteration, kind, path, mtime}. The frontend diffs
     against its local set to detect new arrivals.
     """
-    session_dir = SESSIONS_DIR / session_id
-    iterations_dir = session_dir / "iterations"
+    try:
+        iterations_dir = session_dir(session_id) / "iterations"
+    except ValueError:
+        return []
     out: list[dict] = []
     if not iterations_dir.exists():
         return out
@@ -264,9 +291,9 @@ def append_user_note(session_id: str, note: str) -> None:
     iteration's planning step so the user can steer the loop without
     restructuring it.
     """
-    session_dir = SESSIONS_DIR / session_id
-    session_dir.mkdir(parents=True, exist_ok=True)
-    path = session_dir / "user_notes.md"
+    session_path = session_dir(session_id)
+    session_path.mkdir(parents=True, exist_ok=True)
+    path = session_path / "user_notes.md"
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     with open(path, "a", encoding="utf-8") as f:
         f.write(f"## {ts}\n{note.strip()}\n\n")

@@ -1,5 +1,5 @@
 import { useRef, useMemo, useEffect } from 'react'
-import { Canvas, useFrame } from '@react-three/fiber'
+import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 import useStore from '../../stores/useStore'
@@ -7,7 +7,7 @@ import { activationsToColors, BRAIN_GRAY_R, BRAIN_GRAY_G, BRAIN_GRAY_B } from '.
 
 /**
  * Expand a region-level activation dict into a per-vertex Float32Array using
- * the region→vertices index from the atlas. Vertices not in any region stay 0.
+ * the region-to-vertices index from the atlas. Vertices not in any region stay 0.
  */
 function expandToVertices(activations, regionVertices, nVertices) {
   const out = new Float32Array(nVertices)
@@ -26,7 +26,7 @@ function HeatmapMesh({ activations, mode }) {
   const geoRef = useRef(null)
   const colorsRef = useRef(null)
 
-  const geometry = useMemo(() => {
+  const geometryData = useMemo(() => {
     if (!mesh) return null
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.Float32BufferAttribute(mesh.vertices, 3))
@@ -39,10 +39,13 @@ function HeatmapMesh({ activations, mode }) {
       colors[i * 3 + 2] = BRAIN_GRAY_B
     }
     geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
-    colorsRef.current = colors
-    geoRef.current = geo
-    return geo
+    return { geo, colors }
   }, [mesh])
+
+  useEffect(() => {
+    colorsRef.current = geometryData?.colors ?? null
+    geoRef.current = geometryData?.geo ?? null
+  }, [geometryData])
 
   useEffect(() => {
     if (!geoRef.current || !colorsRef.current || !mesh || !regionVertices || !activations) return
@@ -50,13 +53,13 @@ function HeatmapMesh({ activations, mode }) {
 
     // For delta mode we center around 0 with symmetric bounds. For magnitude we
     // fit to [0, max]. Fire colorscale expects values that cross its threshold
-    // to light up — so we normalize into the 0.6–1.0 lit range.
+    // to light up, so we normalize into the 0.6-1.0 lit range.
     let vmin, vmax
     if (mode === 'delta') {
       const absMax = Math.max(0.05, ...verts.map(Math.abs))
       vmin = -absMax
       vmax = absMax
-      // Remap: negative → cool/gray, positive → fire. Since activationsToColors
+      // Remap: negative to cool/gray, positive to fire. Since activationsToColors
       // treats one-sided, we shift so 0 maps to gray threshold.
       for (let i = 0; i < verts.length; i++) verts[i] = (verts[i] + absMax) / (2 * absMax)
       vmin = 0
@@ -67,11 +70,11 @@ function HeatmapMesh({ activations, mode }) {
     }
     activationsToColors(verts, vmin, vmax, colorsRef.current)
     geoRef.current.attributes.color.needsUpdate = true
-  }, [activations, regionVertices, mesh, mode])
+  }, [activations, regionVertices, mesh, mode, geometryData])
 
-  if (!geometry) return null
+  if (!geometryData) return null
   return (
-    <mesh geometry={geometry}>
+    <mesh geometry={geometryData.geo}>
       <meshStandardMaterial vertexColors side={THREE.DoubleSide} />
     </mesh>
   )
@@ -86,7 +89,7 @@ export default function BrainHeatmap({ activations, title = 'Activations', mode 
       </div>
       {!mesh ? (
         <div className="w-full h-full flex items-center justify-center text-xs text-gray-600">
-          Loading mesh…
+          Loading mesh...
         </div>
       ) : (
         <Canvas

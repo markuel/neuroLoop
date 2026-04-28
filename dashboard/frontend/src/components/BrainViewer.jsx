@@ -1,4 +1,4 @@
-import { useRef, useEffect, useMemo } from 'react'
+import { useRef, useMemo } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, GizmoHelper, GizmoViewcube } from '@react-three/drei'
 import * as THREE from 'three'
@@ -6,11 +6,17 @@ import useStore from '../stores/useStore'
 import { activationsToColors, BRAIN_GRAY_R, BRAIN_GRAY_G, BRAIN_GRAY_B } from '../utils/colorscale'
 
 function BrainMesh() {
-  const meshRef = useRef()
   const mesh = useStore((s) => s.mesh)
-  const colorsRef = useRef(null)
-  const lerpBufRef = useRef(null) // preallocated buffer for interpolated activations
-  const geoRef = useRef(null)
+  const meshRef = useRef(null)
+  const lerpBufRef = useRef(null)
+
+  const material = useMemo(() => new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    side: THREE.DoubleSide,
+    roughness: 0.9,
+    metalness: 0,
+    toneMapped: false,
+  }), [])
 
   const geometry = useMemo(() => {
     if (!mesh) return null
@@ -25,33 +31,36 @@ function BrainMesh() {
       colors[i * 3 + 1] = BRAIN_GRAY_G
       colors[i * 3 + 2] = BRAIN_GRAY_B
     }
-    colorsRef.current = colors
-    lerpBufRef.current = new Float32Array(mesh.nVertices)
-    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
-    geoRef.current = geo
+    const colorAttr = new THREE.BufferAttribute(colors, 3)
+    colorAttr.setUsage(THREE.DynamicDrawUsage)
+    geo.setAttribute('color', colorAttr)
     return geo
   }, [mesh])
 
   // Update colors in the render loop — reads ALL state from store to avoid stale closures
   useFrame(() => {
-    const geo = geoRef.current
-    if (!geo || !colorsRef.current) return
+    const geo = meshRef.current?.geometry
+    const colorAttr = geo?.attributes.color
+    if (!geo || !colorAttr) return
+    const colors = colorAttr.array
+    if (!lerpBufRef.current || lerpBufRef.current.length !== colors.length / 3) {
+      lerpBufRef.current = new Float32Array(colors.length / 3)
+    }
+    const lerpBuf = lerpBufRef.current
     const { preds, timestep, timestepFrac, globalVmin, globalVmax, selectedRegion, regionVertices } = useStore.getState()
     if (!preds) return
     const frameA = preds[timestep]
     if (!frameA) return
 
-    const colors = colorsRef.current
     const frameB = preds[timestep + 1]
 
     // Interpolate between adjacent timesteps for smooth transitions
     if (timestepFrac > 0 && frameB) {
-      const buf = lerpBufRef.current
       const invFrac = 1 - timestepFrac
       for (let i = 0, n = frameA.length; i < n; i++) {
-        buf[i] = frameA[i] * invFrac + frameB[i] * timestepFrac
+        lerpBuf[i] = frameA[i] * invFrac + frameB[i] * timestepFrac
       }
-      activationsToColors(buf, globalVmin, globalVmax, colors)
+      activationsToColors(lerpBuf, globalVmin, globalVmax, colors)
     } else {
       activationsToColors(frameA, globalVmin, globalVmax, colors)
     }
@@ -66,16 +75,48 @@ function BrainMesh() {
       }
     }
 
-    geo.attributes.color.needsUpdate = true
+    colorAttr.needsUpdate = true
   })
 
   if (!geometry) return null
 
   return (
-    <mesh ref={meshRef} geometry={geometry}>
-      <meshStandardMaterial vertexColors side={THREE.DoubleSide} />
-    </mesh>
+    <mesh ref={meshRef} geometry={geometry} material={material} />
   )
+}
+
+function useActivationDiagnostics() {
+  const preds = useStore((s) => s.preds)
+  const timestep = useStore((s) => s.timestep)
+  const timestepFrac = useStore((s) => s.timestepFrac)
+  const globalVmin = useStore((s) => s.globalVmin)
+  const globalVmax = useStore((s) => s.globalVmax)
+
+  return useMemo(() => {
+    if (!preds?.length) return null
+    const frameA = preds[timestep]
+    if (!frameA) return null
+    const frameB = preds[timestep + 1]
+    const frac = frameB ? timestepFrac : 0
+    const invFrac = 1 - frac
+    const range = globalVmax - globalVmin || 1
+    let lit = 0
+    let min = Infinity
+    let max = -Infinity
+
+    for (let i = 0, n = frameA.length; i < n; i++) {
+      const value = frameB ? frameA[i] * invFrac + frameB[i] * frac : frameA[i]
+      if (value < min) min = value
+      if (value > max) max = value
+      if ((value - globalVmin) / range >= 0.3) lit += 1
+    }
+
+    return {
+      litPct: (lit / frameA.length) * 100,
+      min,
+      max,
+    }
+  }, [preds, timestep, timestepFrac, globalVmin, globalVmax])
 }
 
 const CAMERA_DISTANCE = 200 // how far from the centroid the camera orbits
@@ -84,13 +125,13 @@ function CameraFocus({ controlsRef }) {
   const mesh = useStore((s) => s.mesh)
   const selectedRegion = useStore((s) => s.selectedRegion)
   const regionVertices = useStore((s) => s.regionVertices)
+  const focusKeyRef = useRef(null)
   const animRef = useRef(null)
   const { camera } = useThree()
 
-  // Compute centroid + camera position when selection changes
-  useEffect(() => {
-    if (!selectedRegion || !mesh || !regionVertices?.[selectedRegion]) {
-      // Deselected — animate back to default view
+  function beginFocusAnimation() {
+    const idxList = selectedRegion && regionVertices?.[selectedRegion]
+    if (!selectedRegion || !mesh || !idxList?.length) {
       animRef.current = {
         start: performance.now(),
         fromTarget: null,
@@ -100,7 +141,7 @@ function CameraFocus({ controlsRef }) {
       }
       return
     }
-    const idxList = regionVertices[selectedRegion]
+
     const verts = mesh.vertices
     const nPerHemi = mesh.nVertices / 2 // fsaverage5: 10242 per hemisphere
 
@@ -150,10 +191,19 @@ function CameraFocus({ controlsRef }) {
       toTarget: centroid,
       toPos: camPos,
     }
-  }, [selectedRegion, mesh, regionVertices, camera])
+  }
 
   // Smoothly animate both camera position and orbit target
   useFrame(() => {
+    const focusKey = selectedRegion && mesh && regionVertices?.[selectedRegion]?.length
+      ? `${selectedRegion}:${mesh.nVertices}`
+      : '__default__'
+
+    if (focusKeyRef.current !== focusKey) {
+      focusKeyRef.current = focusKey
+      beginFocusAnimation()
+    }
+
     const anim = animRef.current
     if (!anim || !controlsRef.current) return
     if (!anim.fromTarget) {
@@ -176,6 +226,13 @@ function CameraFocus({ controlsRef }) {
 
 export default function BrainViewer() {
   const controlsRef = useRef()
+  const preds = useStore((s) => s.preds)
+  const timestep = useStore((s) => s.timestep)
+  const timestepFrac = useStore((s) => s.timestepFrac)
+  const globalVmin = useStore((s) => s.globalVmin)
+  const globalVmax = useStore((s) => s.globalVmax)
+  const smoothFrame = preds ? Math.min(preds.length - 1, timestep + timestepFrac) : 0
+  const activationDiagnostics = useActivationDiagnostics()
 
   return (
     <div className="w-full h-full bg-gray-900 rounded-lg overflow-hidden relative">
@@ -184,6 +241,29 @@ export default function BrainViewer() {
         <div><span className="text-red-400 font-semibold">A</span>nterior / <span className="text-red-400 font-semibold">P</span>osterior</div>
         <div><span className="text-red-400 font-semibold">S</span>uperior / <span className="text-red-400 font-semibold">I</span>nferior</div>
       </div>
+      {preds && (
+        <div className="absolute bottom-4 left-4 z-10 w-56 rounded-md border border-gray-800 bg-gray-950/80 px-3 py-2 text-xs text-gray-300 backdrop-blur-sm pointer-events-none">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[10px] uppercase tracking-wider text-gray-500">Activation</span>
+            <span className="font-mono text-[10px] text-gray-400">Frame {smoothFrame.toFixed(2)}</span>
+          </div>
+          <div
+            className="mt-2 h-2 rounded-full border border-gray-700"
+            style={{
+              background: 'linear-gradient(90deg, rgb(107,107,107) 0%, rgb(107,107,107) 28%, rgb(209,45,32) 48%, rgb(240,122,25) 72%, rgb(255,204,51) 100%)',
+            }}
+          />
+          <div className="mt-1 flex justify-between font-mono text-[10px] text-gray-500">
+            <span>{globalVmin.toFixed(2)}</span>
+            <span>{globalVmax.toFixed(2)}</span>
+          </div>
+          {activationDiagnostics && (
+            <div className="mt-1 font-mono text-[10px] text-gray-500">
+              {activationDiagnostics.litPct.toFixed(1)}% lit | {activationDiagnostics.min.toFixed(2)}..{activationDiagnostics.max.toFixed(2)}
+            </div>
+          )}
+        </div>
+      )}
       <Canvas
         camera={{
           position: [-180, -30, 100],

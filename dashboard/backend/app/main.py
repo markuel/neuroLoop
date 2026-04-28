@@ -1,20 +1,29 @@
 # dashboard/backend/app/main.py
 import asyncio
 import json
+import mimetypes
+import os
 import uuid
+from contextlib import asynccontextmanager
+from typing import Literal
 from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, UploadFile, File, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .storage import (
     STORAGE_MODE,
     presigned_upload_url,
     presigned_download_url,
+    download_bytes,
+    download_byte_range,
+    object_size,
+    list_prefix,
     get_local_file_path,
+    is_supported_upload_content_type,
     LOCAL_DATA_DIR,
 )
 from .mesh import get_fsaverage5_mesh_binary
@@ -29,20 +38,88 @@ from .agent import (
     create_draft_session,
     append_user_note,
     SESSIONS_DIR,
+    session_dir,
 )
 
-app = FastAPI(title="neuroLoop API")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["X-N-Vertices", "X-N-Faces"],
-)
+MAX_REFERENCE_BYTES = 20 * 1024 * 1024
 
 
-@app.on_event("startup")
-def _warmup():
+def _recover_input_key(job: dict) -> str | None:
+    key = job.get("s3_key") or job.get("input_key")
+    if key:
+        return key
+
+    filename = job.get("filename")
+    if not filename:
+        return None
+    try:
+        matches = [
+            candidate for candidate in list_prefix("uploads/")
+            if candidate.rsplit("/", 1)[-1] == filename
+        ]
+    except Exception:
+        return None
+    return sorted(matches)[-1] if matches else None
+
+
+def _safe_reference_name(name: str) -> str:
+    safe = name.replace("/", "_").replace("\\", "_")
+    if not safe or safe in {".", ".."}:
+        raise HTTPException(status_code=400, detail="Invalid reference name")
+    return safe
+
+
+def _input_media_type(job: dict) -> str:
+    guessed, _encoding = mimetypes.guess_type(job.get("filename") or "")
+    if guessed:
+        return guessed
+    media_types = {
+        "video": "video/mp4",
+        "audio": "audio/mpeg",
+        "text": "text/plain",
+    }
+    return media_types.get(job.get("input_type"), "application/octet-stream")
+
+
+def _parse_range_header(range_header: str | None, size: int) -> tuple[int, int] | None:
+    if not range_header:
+        return None
+    unit, sep, raw_range = range_header.partition("=")
+    if sep != "=" or unit.strip().lower() != "bytes":
+        return None
+
+    first_range = raw_range.split(",", 1)[0].strip()
+    start_raw, sep, end_raw = first_range.partition("-")
+    if sep != "-":
+        return None
+
+    try:
+        if start_raw == "":
+            suffix_len = int(end_raw)
+            if suffix_len <= 0:
+                raise ValueError
+            start = max(size - suffix_len, 0)
+            end = size - 1
+        else:
+            start = int(start_raw)
+            end = int(end_raw) if end_raw else size - 1
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=416,
+            detail="Invalid byte range",
+            headers={"Content-Range": f"bytes */{size}"},
+        ) from exc
+
+    if start < 0 or start >= size or end < start:
+        raise HTTPException(
+            status_code=416,
+            detail="Requested range not satisfiable",
+            headers={"Content-Range": f"bytes */{size}"},
+        )
+    return start, min(end, size - 1)
+
+
+def _start_warmup():
     """Pre-load heavy resources in a background thread so first request is fast."""
     import threading
 
@@ -57,6 +134,38 @@ def _warmup():
     threading.Thread(target=_load, daemon=True).start()
 
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    _start_warmup()
+    yield
+
+
+app = FastAPI(title="neuroLoop API", lifespan=lifespan)
+
+
+def _cors_origins() -> list[str]:
+    raw = os.getenv("CORS_ORIGINS")
+    if raw:
+        return [origin.strip() for origin in raw.split(",") if origin.strip()]
+    return [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins(),
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Content-Type"],
+    expose_headers=["X-N-Vertices", "X-N-Faces"],
+)
+
+
 # ------------------------------------------------------------------
 # Upload
 # ------------------------------------------------------------------
@@ -67,6 +176,8 @@ class UploadRequest(BaseModel):
 
 @app.post("/api/upload")
 def upload(req: UploadRequest):
+    if not is_supported_upload_content_type(req.content_type):
+        raise HTTPException(status_code=415, detail="Uploads must be video, audio, or text/plain")
     return presigned_upload_url(req.filename, req.content_type)
 
 
@@ -74,7 +185,10 @@ def upload(req: UploadRequest):
 async def upload_file_local(key: str, request: Request):
     """Direct file upload for local storage mode."""
     body = await request.body()
-    dest = LOCAL_DATA_DIR / key
+    try:
+        dest = get_local_file_path(key)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid storage key")
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(body)
     return {"status": "ok", "key": key}
@@ -87,9 +201,12 @@ async def upload_file_local(key: str, request: Request):
 @app.get("/api/files/{key:path}")
 def serve_file(key: str):
     """Serve a locally stored file. Only active in local mode."""
-    path = get_local_file_path(key)
+    try:
+        path = get_local_file_path(key)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid storage key")
     if not path.exists():
-        return {"error": "not found"}, 404
+        raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(str(path))
 
 
@@ -106,7 +223,7 @@ def download_results(job_id: str):
     prefix = f"results/{job_id}"
     keys = list_prefix(prefix)
     if not keys:
-        return {"error": "no results found"}
+        raise HTTPException(status_code=404, detail="No results found")
 
     if STORAGE_MODE == "local":
         # Zip directly from local files
@@ -177,7 +294,7 @@ def atlas():
 
 class PredictRequest(BaseModel):
     s3_key: str
-    input_type: str  # "video", "audio", "text"
+    input_type: Literal["video", "audio", "text"]
 
 @app.post("/api/predict")
 def predict(req: PredictRequest):
@@ -197,11 +314,69 @@ def results(job_id: str):
     prefix = job["results_prefix"]
     return {
         "status": "done",
-        "preds_url": presigned_download_url(f"{prefix}/preds.bin"),
-        "regions_url": presigned_download_url(f"{prefix}/regions.json"),
-        "meta_url": presigned_download_url(f"{prefix}/meta.json"),
+        "preds_url": f"/api/results/{job_id}/preds.bin",
+        "regions_url": f"/api/results/{job_id}/regions.json",
+        "meta_url": f"/api/results/{job_id}/meta.json",
+        "input_url": f"/api/results/{job_id}/input" if _recover_input_key(job) else None,
         "meta": job.get("meta_cache", {}),
     }
+
+
+@app.get("/api/results/{job_id}/input")
+def result_input(job_id: str, request: Request):
+    job = get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    key = _recover_input_key(job)
+    if not key:
+        raise HTTPException(status_code=404, detail="Original input is not available for this job")
+    media_type = _input_media_type(job)
+    try:
+        size = object_size(key)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Original input not found") from exc
+
+    byte_range = _parse_range_header(request.headers.get("range"), size)
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(size),
+    }
+    try:
+        if byte_range:
+            start, end = byte_range
+            data = download_byte_range(key, start, end)
+            headers.update({
+                "Content-Range": f"bytes {start}-{end}/{size}",
+                "Content-Length": str(len(data)),
+            })
+            return Response(content=data, status_code=206, media_type=media_type, headers=headers)
+
+        data = download_bytes(key)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Original input not found") from exc
+    return Response(content=data, media_type=media_type, headers=headers)
+
+
+@app.get("/api/results/{job_id}/{artifact_name}")
+def result_artifact(job_id: str, artifact_name: Literal["preds.bin", "regions.json", "meta.json"]):
+    job = get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job["status"] != "done":
+        raise HTTPException(status_code=409, detail="Job results are not ready")
+
+    key = f"{job['results_prefix']}/{artifact_name}"
+    content_types = {
+        "preds.bin": "application/octet-stream",
+        "regions.json": "application/json",
+        "meta.json": "application/json",
+    }
+    try:
+        data = download_bytes(key)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Result artifact not found") from exc
+    return Response(content=data, media_type=content_types[artifact_name])
+
 
 @app.get("/api/runs")
 def runs():
@@ -226,18 +401,23 @@ def config():
 # ------------------------------------------------------------------
 
 class AgentStartRequest(BaseModel):
-    target_description: str
-    creative_brief: str = ""
-    duration: int = 30
-    max_iterations: int = 20
-    target_score: float = 0.85
+    target_description: str = Field(min_length=1, max_length=2000)
+    creative_brief: str = Field(default="", max_length=4000)
+    duration: int = Field(default=30, ge=1, le=300)
+    max_iterations: int = Field(default=20, ge=1, le=50)
+    target_score: float = Field(default=0.85, ge=0, le=1)
     session_id: str | None = None  # if provided, reuses a draft session (with uploaded refs)
 
 @app.post("/api/agent/start")
 def agent_start(req: AgentStartRequest):
     data = req.model_dump()
     draft_id = data.pop("session_id", None)
-    session_id = start_session(data, session_id=draft_id)
+    try:
+        session_id = start_session(data, session_id=draft_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session ID")
+    except OSError:
+        raise HTTPException(status_code=503, detail="Agent runtime is unavailable")
     return {"session_id": session_id}
 
 
@@ -249,24 +429,32 @@ def agent_create_draft():
 
 @app.post("/api/agent/sessions/{session_id}/references")
 async def agent_upload_reference(session_id: str, file: UploadFile = File(...)):
-    session_dir = SESSIONS_DIR / session_id / "references"
-    if not session_dir.parent.exists():
+    if not (file.content_type or "").startswith("image/"):
+        raise HTTPException(status_code=415, detail="Reference uploads must be images")
+    try:
+        session_path = session_dir(session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session ID")
+    ref_dir = session_path / "references"
+    if not ref_dir.parent.exists():
         raise HTTPException(status_code=404, detail="Session not found")
-    session_dir.mkdir(parents=True, exist_ok=True)
+    ref_dir.mkdir(parents=True, exist_ok=True)
     # Preserve original name but avoid path traversal
-    safe_name = (
-        file.filename.replace("/", "_").replace("\\", "_")
-        if file.filename
-        else f"ref_{uuid.uuid4().hex[:8]}.bin"
-    )
-    dest = session_dir / safe_name
-    dest.write_bytes(await file.read())
+    safe_name = _safe_reference_name(file.filename) if file.filename else f"ref_{uuid.uuid4().hex[:8]}.bin"
+    dest = ref_dir / safe_name
+    data = await file.read(MAX_REFERENCE_BYTES + 1)
+    if len(data) > MAX_REFERENCE_BYTES:
+        raise HTTPException(status_code=413, detail="Reference image is too large")
+    dest.write_bytes(data)
     return {"name": safe_name}
 
 
 @app.delete("/api/agent/sessions/{session_id}/references/{name}")
 def agent_delete_reference(session_id: str, name: str):
-    p = SESSIONS_DIR / session_id / "references" / name
+    try:
+        p = session_dir(session_id) / "references" / _safe_reference_name(name)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session ID")
     if p.exists():
         p.unlink()
     return {"ok": True}
@@ -279,14 +467,20 @@ class NoteRequest(BaseModel):
 def agent_add_note(session_id: str, req: NoteRequest):
     if not req.note.strip():
         return {"ok": False}
-    append_user_note(session_id, req.note)
+    try:
+        append_user_note(session_id, req.note)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session ID")
     return {"ok": True}
 
 
 @app.get("/api/agent/sessions/{session_id}/artifact/{path:path}")
 def agent_artifact(session_id: str, path: str):
     """Serve any file from inside the session directory (thumbnails, JSON, segment clips)."""
-    base = (SESSIONS_DIR / session_id).resolve()
+    try:
+        base = session_dir(session_id).resolve()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session ID")
     target = (base / path).resolve()
     try:
         target.relative_to(base)
@@ -300,6 +494,13 @@ def agent_artifact(session_id: str, path: str):
 @app.get("/api/agent/sessions/{session_id}/artifacts-stream")
 async def agent_artifacts_stream(session_id: str):
     """SSE stream that emits every artifact currently on disk, then any new arrivals."""
+    try:
+        session_dir(session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session ID")
+    if get_session(session_id) is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
     async def event_generator():
         seen: set[str] = set()
         while True:
@@ -334,20 +535,27 @@ def agent_sessions():
 def agent_session(session_id: str):
     s = get_session(session_id)
     if s is None:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Session not found")
     return s
 
 @app.post("/api/agent/sessions/{session_id}/stop")
 def agent_stop(session_id: str):
+    try:
+        session_dir(session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session ID")
     ok = stop_session(session_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Running session not found")
     return {"stopped": ok}
 
 @app.get("/api/agent/sessions/{session_id}/video/{iteration}")
 def agent_video(session_id: str, iteration: int):
-    video_path = SESSIONS_DIR / session_id / "iterations" / str(iteration) / "final.mp4"
+    try:
+        video_path = session_dir(session_id) / "iterations" / str(iteration) / "final.mp4"
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session ID")
     if not video_path.exists():
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Video not found")
     return FileResponse(str(video_path), media_type="video/mp4")
 
@@ -355,6 +563,13 @@ def agent_video(session_id: str, iteration: int):
 @app.get("/api/agent/sessions/{session_id}/log-stream")
 async def agent_log_stream(session_id: str):
     """SSE stream of the agent's raw Claude output log."""
+    try:
+        session_dir(session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session ID")
+    if get_session(session_id) is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
     async def event_generator():
         offset = 0
         while True:

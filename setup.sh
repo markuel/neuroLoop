@@ -30,10 +30,13 @@ step "Checking Node.js"
 
 if ! command -v node &>/dev/null; then
   echo "  Installing Node.js..."
-  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash -s -- --silent
+  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
   export NVM_DIR="$HOME/.nvm"
   [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-  nvm install --lts --silent
+  set +u
+  nvm install --lts
+  nvm use --lts
+  set -u
 fi
 ok "node $(node --version)"
 
@@ -52,10 +55,11 @@ set -a; source .env; set +a
 # ------------------------------------------------------------------
 step "Installing Python dependencies"
 
+export PATH="$HOME/.local/bin:$PATH"
+
 if ! command -v uv &>/dev/null; then
   echo "  Installing uv..."
   curl -LsSf https://astral.sh/uv/install.sh | sh
-  export PATH="$HOME/.local/bin:$PATH"
 fi
 ok "uv $(uv --version)"
 
