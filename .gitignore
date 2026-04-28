@@ -40,8 +40,9 @@ wandb/
 # Local storage mode data
 data/
 
-# claude
+# codig agents
 .claude/
+.codex*
 
 # playwright
 .playwright-mcp/
