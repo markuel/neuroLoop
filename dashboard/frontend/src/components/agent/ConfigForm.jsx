@@ -18,14 +18,14 @@ export default function ConfigForm({ config, onStart }) {
     target_score: 0.85,
   })
   const [draftId, setDraftId] = useState(null)
-  const [refs, setRefs] = useState([]) // [{name}]
+  const [refs, setRefs] = useState([])
   const [starting, setStarting] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [referenceError, setReferenceError] = useState(null)
   const [startError, setStartError] = useState(null)
   const fileRef = useRef(null)
 
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const set = (key, value) => setForm(prev => ({ ...prev, [key]: value }))
 
   const ensureDraft = async () => {
     if (draftId) return draftId
@@ -45,9 +45,9 @@ export default function ConfigForm({ config, onStart }) {
         const { name } = await uploadReference(id, file)
         uploaded.push({ name })
       }
-      setRefs(r => [...r, ...uploaded])
+      setRefs(prev => [...prev, ...uploaded])
     } catch (err) {
-      console.error('upload failed', err)
+      console.error('Reference upload failed:', err)
       setReferenceError(err.message || 'Reference upload failed.')
     } finally {
       setUploading(false)
@@ -60,182 +60,200 @@ export default function ConfigForm({ config, onStart }) {
     setReferenceError(null)
     try {
       await deleteReference(draftId, name)
-      setRefs(r => r.filter(x => x.name !== name))
+      setRefs(prev => prev.filter(item => item.name !== name))
     } catch (err) {
-      console.error('delete reference failed', err)
+      console.error('Reference delete failed:', err)
       setReferenceError(err.message || 'Reference could not be removed.')
     }
   }
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
+  const handleSubmit = async (event) => {
+    event.preventDefault()
     if (!form.target_description.trim()) return
     setStarting(true)
     setStartError(null)
     try {
       await onStart({ ...form, session_id: draftId })
     } catch (err) {
-      console.error('agent start failed', err)
+      console.error('Agent start failed:', err)
       setStartError(err.message || 'Agent loop could not be started.')
     } finally {
       setStarting(false)
     }
   }
 
-  const handleDrop = (e) => {
-    e.preventDefault()
-    handleFiles(Array.from(e.dataTransfer.files))
+  const handleDrop = (event) => {
+    event.preventDefault()
+    handleFiles(Array.from(event.dataTransfer.files))
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-      <div>
-        <label htmlFor={targetId} className="block text-xs text-gray-400 mb-1.5">Target brain state</label>
-        <textarea
-          id={targetId}
-          className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 resize-none focus:outline-none focus:border-red-500 transition"
-          rows={3}
-          placeholder="e.g. 'deep calm with spatial exploration, engaging motion and place regions'"
-          value={form.target_description}
-          onChange={e => set('target_description', e.target.value)}
-          required
-        />
+    <form onSubmit={handleSubmit} className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+      <div className="space-y-2">
+        <div className="text-xs uppercase tracking-[0.24em] text-gray-600">Generate Video</div>
+        <h1 className="text-3xl font-semibold text-white md:text-4xl">Tell the agent what brain state to chase.</h1>
+        <p className="max-w-2xl text-sm leading-relaxed text-gray-400">
+          Start with the desired viewer state, then give the creative direction. The agent will plan frames,
+          generate clips, score them with TRIBE, and iterate.
+        </p>
       </div>
 
-      <div>
-        <label htmlFor={briefId} className="block text-xs text-gray-400 mb-1.5">
-          Creative brief <span className="text-gray-600">(optional)</span>
-        </label>
-        <textarea
-          id={briefId}
-          className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 resize-none focus:outline-none focus:border-red-500 transition"
-          rows={3}
-          placeholder="What the video should actually be, e.g. 'action chase through a neon city starring the character in the reference photo, holding the product'"
-          value={form.creative_brief}
-          onChange={e => set('creative_brief', e.target.value)}
-        />
-      </div>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="rounded-xl border border-gray-800 bg-gray-950/80 p-4 shadow-2xl shadow-black/30">
+          <label htmlFor={targetId} className="mb-2 block text-sm font-medium text-gray-200">
+            Target brain state
+          </label>
+          <textarea
+            id={targetId}
+            className="min-h-36 w-full resize-none rounded-lg border border-gray-700 bg-black/40 px-4 py-3 text-base leading-relaxed text-white placeholder-gray-600 outline-none transition focus:border-red-500"
+            placeholder="e.g. highly engaged viewer with social reflection, suspense, and strong scene-understanding activation"
+            value={form.target_description}
+            onChange={event => set('target_description', event.target.value)}
+            required
+          />
 
-      <div>
-        <label className="block text-xs text-gray-400 mb-1.5">
-          Reference images <span className="text-gray-600">(optional)</span>
-        </label>
-        <button
-          type="button"
-          onDrop={handleDrop}
-          onDragOver={e => e.preventDefault()}
-          onClick={() => fileRef.current?.click()}
-          className="w-full border border-dashed border-gray-700 rounded-lg px-3 py-4 text-xs text-gray-500 text-center cursor-pointer hover:border-gray-600 hover:text-gray-400 focus:outline-none focus:border-red-500 transition"
-        >
-          {uploading
-            ? 'Uploading...'
-            : refs.length
-              ? `${refs.length} reference image${refs.length === 1 ? '' : 's'} - drop or click to add more`
-              : 'Drop images here (product photos, character refs, style refs)'}
-        </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          multiple
-          className="hidden"
-          onChange={e => handleFiles(Array.from(e.target.files))}
-        />
-        {referenceError && (
-          <p className="mt-2 text-xs text-red-300" role="alert">
-            {referenceError}
-          </p>
-        )}
-        {refs.length > 0 && (
-          <div className="mt-3 grid grid-cols-4 gap-2">
-            {refs.map(r => (
-              <div key={r.name} className="relative group aspect-square rounded-md overflow-hidden border border-gray-800">
-                <img
-                  src={agentArtifactUrl(draftId, `references/${r.name}`)}
-                  alt={r.name}
-                  className="w-full h-full object-cover"
-                />
-                <button
-                  type="button"
-                  onClick={() => handleRemove(r.name)}
-                  className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/70 text-gray-300 text-xs opacity-0 group-hover:opacity-100 transition"
-                  aria-label={`Remove ${r.name}`}
-                >
-                  x
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label htmlFor={durationId} className="block text-xs text-gray-400 mb-1.5">Duration</label>
-          <select
-            id={durationId}
-            className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-red-500"
-            value={form.duration}
-            onChange={e => set('duration', Number(e.target.value))}
-          >
-            <option value={30}>30s</option>
-            <option value={45}>45s</option>
-            <option value={60}>60s</option>
-          </select>
-        </div>
-        <div>
-          <label htmlFor={maxIterationsId} className="block text-xs text-gray-400 mb-1.5">Max iter.</label>
-          <input
-            id={maxIterationsId}
-            type="number" min={1} max={50}
-            className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-red-500"
-            value={form.max_iterations}
-            onChange={e => set('max_iterations', Number(e.target.value))}
+          <label htmlFor={briefId} className="mb-2 mt-5 block text-sm font-medium text-gray-200">
+            Creative brief
+          </label>
+          <textarea
+            id={briefId}
+            className="min-h-48 w-full resize-none rounded-lg border border-gray-700 bg-black/40 px-4 py-3 text-base leading-relaxed text-white placeholder-gray-600 outline-none transition focus:border-red-500"
+            placeholder="Describe the video itself: genre, setting, characters, mood, product, narration, references, constraints..."
+            value={form.creative_brief}
+            onChange={event => set('creative_brief', event.target.value)}
           />
         </div>
+
+        <aside className="flex flex-col gap-4">
+          <div
+            onDrop={handleDrop}
+            onDragOver={event => event.preventDefault()}
+            className="rounded-xl border border-dashed border-gray-700 bg-gray-950/70 p-4"
+          >
+            <div className="mb-3">
+              <div className="text-sm font-medium text-gray-200">Reference images</div>
+              <p className="mt-1 text-xs leading-relaxed text-gray-500">
+                Product photos, character references, or style frames.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="flex aspect-[4/3] w-full flex-col items-center justify-center rounded-lg border border-gray-800 bg-black/30 px-4 text-center text-sm text-gray-500 transition hover:border-gray-600 hover:text-gray-300 focus:border-red-500 focus:outline-none"
+            >
+              <span className="text-lg text-gray-300">{uploading ? 'Uploading...' : 'Drop or click'}</span>
+              <span className="mt-1 text-xs text-gray-600">Images are saved with this draft session.</span>
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={event => handleFiles(Array.from(event.target.files))}
+            />
+            {referenceError && (
+              <p className="mt-2 text-xs text-red-300" role="alert">
+                {referenceError}
+              </p>
+            )}
+            {refs.length > 0 && (
+              <div className="mt-3 grid grid-cols-4 gap-2">
+                {refs.map(ref => (
+                  <div key={ref.name} className="group relative aspect-square overflow-hidden rounded-md border border-gray-800">
+                    <img
+                      src={agentArtifactUrl(draftId, `references/${ref.name}`)}
+                      alt={ref.name}
+                      className="h-full w-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleRemove(ref.name)}
+                      className="absolute right-1 top-1 h-5 w-5 rounded-full bg-black/70 text-xs text-gray-300 opacity-0 transition group-hover:opacity-100"
+                      aria-label={`Remove ${ref.name}`}
+                    >
+                      x
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <details className="rounded-xl border border-gray-800 bg-gray-950/70 p-4" open>
+            <summary className="cursor-pointer text-sm font-medium text-gray-200">Run settings</summary>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor={durationId} className="mb-1.5 block text-xs text-gray-400">Duration</label>
+                <select
+                  id={durationId}
+                  className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-white outline-none focus:border-red-500"
+                  value={form.duration}
+                  onChange={event => set('duration', Number(event.target.value))}
+                >
+                  <option value={30}>30s</option>
+                  <option value={45}>45s</option>
+                  <option value={60}>60s</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor={maxIterationsId} className="mb-1.5 block text-xs text-gray-400">Max iterations</label>
+                <input
+                  id={maxIterationsId}
+                  type="number"
+                  min={1}
+                  max={50}
+                  className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-white outline-none focus:border-red-500"
+                  value={form.max_iterations}
+                  onChange={event => set('max_iterations', Number(event.target.value))}
+                />
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <div className="mb-1.5 flex items-center justify-between gap-3">
+                <label htmlFor={targetScoreId} className="text-xs text-gray-400">Target score</label>
+                <span className="font-mono text-xs text-gray-300">{form.target_score.toFixed(2)}</span>
+              </div>
+              <input
+                id={targetScoreId}
+                type="range"
+                min={0.5}
+                max={1}
+                step={0.01}
+                className="w-full accent-red-500"
+                value={form.target_score}
+                onChange={event => set('target_score', Number(event.target.value))}
+              />
+              <div className="mt-1 flex justify-between font-mono text-[10px] text-gray-600">
+                <span>0.50</span>
+                <span>1.00</span>
+              </div>
+            </div>
+
+            {config && (
+              <div className="mt-4 rounded-lg border border-gray-800 bg-black/25 px-3 py-2 text-xs text-gray-500">
+                <div>Image model: <span className="text-gray-300">{config.image_model}</span></div>
+                <div className="mt-1">Video model: <span className="text-gray-300">{config.video_model}</span></div>
+              </div>
+            )}
+          </details>
+
+          {startError && (
+            <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200" role="alert">
+              {startError}
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={starting || !form.target_description.trim()}
+            className="rounded-xl bg-red-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {starting ? 'Starting agent...' : 'Start generation'}
+          </button>
+        </aside>
       </div>
-
-      <div>
-        <div className="mb-1.5 flex items-center justify-between gap-3">
-          <label htmlFor={targetScoreId} className="block text-xs text-gray-400">Target score</label>
-          <span className="font-mono text-xs text-gray-300">{form.target_score.toFixed(2)}</span>
-        </div>
-        <input
-          id={targetScoreId}
-          type="range"
-          min={0.5}
-          max={1}
-          step={0.01}
-          className="w-full accent-red-500"
-          value={form.target_score}
-          onChange={e => set('target_score', Number(e.target.value))}
-        />
-        <div className="mt-1 flex justify-between font-mono text-[10px] text-gray-600">
-          <span>0.50</span>
-          <span>1.00</span>
-        </div>
-      </div>
-
-      {config && (
-        <div className="flex gap-4 text-xs text-gray-500">
-          <span>Image: <span className="text-gray-300">{config.image_model}</span></span>
-          <span>Video: <span className="text-gray-300">{config.video_model}</span></span>
-        </div>
-      )}
-
-      {startError && (
-        <p className="text-xs text-red-300" role="alert">
-          {startError}
-        </p>
-      )}
-
-      <button
-        type="submit"
-        disabled={starting || !form.target_description.trim()}
-        className="self-start px-5 py-2 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed transition"
-      >
-        {starting ? 'Starting...' : 'Start agent loop'}
-      </button>
     </form>
   )
 }

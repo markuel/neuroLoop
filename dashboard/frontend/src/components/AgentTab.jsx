@@ -5,164 +5,97 @@ import {
 } from '../utils/api'
 import ConfigForm from './agent/ConfigForm'
 import ArtifactCanvas from './agent/ArtifactCanvas'
-import LogFeed from './agent/LogFeed'
-import UserNotes from './agent/UserNotes'
+import AgentTranscript from './agent/AgentTranscript'
 
 const STEP_LABELS = {
-  starting: 'Starting...',
+  starting: 'Starting',
   planning: 'Planning prompts',
   generating_keyframes: 'Generating keyframes',
-  generating_video: 'Generating video segments',
+  generating_video: 'Generating video clips',
   stitching: 'Stitching video',
-  scoring: 'Scoring with TRIBE v2',
-  iteration_complete: 'Analysing results',
+  scoring: 'Scoring with TRIBE',
+  iteration_complete: 'Reviewing iteration',
 }
 
-function ScoreBar({ score, target }) {
-  const pct = Math.round((score / (target || 1)) * 100)
-  return (
-    <div className="flex items-center gap-3">
-      <div className="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
-        <div
-          className="h-full rounded-full transition-all duration-700"
-          style={{
-            width: `${Math.min(pct, 100)}%`,
-            background: score >= target
-              ? 'linear-gradient(90deg,#22c55e,#16a34a)'
-              : 'linear-gradient(90deg,#e94560,#533483)',
-          }}
-        />
-      </div>
-      <span className="text-xs text-gray-400 w-10 text-right">{score.toFixed(2)}</span>
-    </div>
-  )
+function phaseLabel(session) {
+  if (!session) return 'Starting agent session'
+  return STEP_LABELS[session.step] || session.status_detail || session.status || 'Working'
 }
 
-function StatusPill({ label, value, tone = 'muted' }) {
-  const tones = {
-    live: 'border-green-500/30 bg-green-500/10 text-green-300',
-    ready: 'border-blue-500/30 bg-blue-500/10 text-blue-300',
-    done: 'border-gray-700 bg-gray-900 text-gray-300',
-    warn: 'border-yellow-500/30 bg-yellow-500/10 text-yellow-300',
-    error: 'border-red-500/30 bg-red-500/10 text-red-300',
-    muted: 'border-gray-800 bg-gray-900 text-gray-500',
-  }
-
-  return (
-    <div className={`rounded-md border px-2.5 py-1.5 ${tones[tone]}`}>
-      <span className="text-[10px] uppercase tracking-wider opacity-70">{label}</span>
-      <span className="ml-2 text-xs font-medium">{value}</span>
-    </div>
-  )
-}
-
-function GenerateStatusStrip({ sessionId, session }) {
+function RunHeader({ sessionId, session, onStop, onNewSession }) {
   const params = session?.params || {}
   const isRunning = session?.is_running
-  const hasSession = Boolean(sessionId)
+  const iteration = session?.current_iteration ?? 0
   const maxIterations = params.max_iterations ?? '?'
-  const currentIteration = session?.current_iteration ?? 0
-  const step = session?.step ? (STEP_LABELS[session.step] || session.step) : 'Ready'
-  const status = session?.status || (isRunning ? 'running' : hasSession ? 'review' : 'setup')
-  const statusTone = isRunning
-    ? 'live'
-    : ['failed', 'stopped'].includes(status)
-      ? 'error'
-      : status === 'partial'
-        ? 'warn'
-        : hasSession ? 'done' : 'ready'
+  const bestScore = session?.best_score > 0 ? session.best_score.toFixed(3) : '--'
 
   return (
-    <div className="h-12 border-b border-gray-800 bg-gray-950/95 px-4 flex items-center gap-2 overflow-x-auto">
-      <StatusPill
-        label="Status"
-        value={!hasSession ? 'Setup' : status}
-        tone={statusTone}
-      />
-      <StatusPill label="Step" value={step} tone={isRunning ? 'live' : hasSession ? 'done' : 'muted'} />
-      <StatusPill
-        label="Iteration"
-        value={hasSession ? `${currentIteration}/${maxIterations}` : '--'}
-        tone={hasSession ? 'done' : 'muted'}
-      />
-      <StatusPill
-        label="Best Score"
-        value={session?.best_score > 0 ? session.best_score.toFixed(3) : '--'}
-        tone={session?.best_score > 0 ? 'done' : 'muted'}
-      />
-      <StatusPill
-        label="Target"
-        value={params.target_score != null ? params.target_score.toFixed(2) : '--'}
-        tone={params.target_score != null ? 'done' : 'muted'}
-      />
-      <StatusPill
-        label="Session"
-        value={sessionId ? sessionId.slice(0, 8) : 'Not started'}
-        tone={sessionId ? 'done' : 'muted'}
-      />
-    </div>
-  )
-}
-
-function LiveSessionHeader({ session, onStop }) {
-  const params = session.params || {}
-  const isRunning = session.is_running
-  const status = session.status || (isRunning ? 'running' : 'complete')
-  const counts = session.artifact_counts || {}
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 min-w-0">
-          {isRunning && <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse flex-shrink-0" />}
-          <span className="text-sm font-medium text-white truncate">
-            {isRunning ? (STEP_LABELS[session.step] || session.step) : session.status_detail || `Session ${status}`}
-          </span>
-          {session.current_iteration > 0 && (
-            <span className="text-xs text-gray-500 flex-shrink-0">
-              {session.current_iteration}/{params.max_iterations ?? '?'}
-            </span>
-          )}
+    <header className="flex flex-shrink-0 items-center justify-between gap-4 border-b border-gray-800 bg-gray-950/95 px-5 py-3">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          {isRunning && <span className="h-2 w-2 rounded-full bg-green-400 animate-pulse" />}
+          <h1 className="truncate text-base font-semibold text-white">{phaseLabel(session)}</h1>
         </div>
+        <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
+          <span>Iteration <span className="font-mono text-gray-300">{iteration}/{maxIterations}</span></span>
+          <span>Best score <span className="font-mono text-gray-300">{bestScore}</span></span>
+          <span className="max-w-[28rem] truncate">Session <span className="font-mono text-gray-400">{sessionId}</span></span>
+        </div>
+      </div>
+      <div className="flex flex-shrink-0 items-center gap-2">
         {isRunning && (
           <button
+            type="button"
             onClick={onStop}
-            className="px-2.5 py-1 text-xs rounded-md bg-gray-800 hover:bg-gray-700 text-gray-300 transition"
+            className="rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-300 transition hover:border-red-500/50 hover:text-red-200"
           >
             Stop
           </button>
         )}
+        <button
+          type="button"
+          onClick={onNewSession}
+          className="rounded-lg bg-gray-100 px-3 py-2 text-sm font-medium text-gray-950 transition hover:bg-white"
+        >
+          New prompt
+        </button>
       </div>
-      {params.target_description && (
-        <div>
-          <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-0.5">Target state</div>
-          <p className="text-xs text-gray-400 italic line-clamp-3">{params.target_description}</p>
-        </div>
-      )}
-      {params.creative_brief && (
-        <div>
-          <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-0.5">Creative brief</div>
-          <p className="text-xs text-gray-400 italic line-clamp-3">{params.creative_brief}</p>
-        </div>
-      )}
-      {session.archive_prefix && (
-        <div>
-          <div className="text-[10px] text-gray-600 uppercase tracking-wider mb-0.5">Archive</div>
-          <p className="truncate font-mono text-[10px] text-gray-500">{session.archive_prefix}</p>
-          <p className="mt-1 text-[10px] text-gray-600">
-            {counts.keyframes ?? 0} frames / {counts.segments ?? 0} clips / {counts.logs ?? 0} logs
-          </p>
-        </div>
-      )}
-      {session.best_score > 0 && (
-        <div>
-          <div className="flex justify-between text-xs text-gray-400 mb-1">
-            <span>Best score</span>
-            <span>Target: {params.target_score ?? 0.85}</span>
-          </div>
-          <ScoreBar score={session.best_score} target={params.target_score ?? 0.85} />
-        </div>
-      )}
-    </div>
+    </header>
+  )
+}
+
+function RecentSessions({ sessions, activeSessionId, onSelect }) {
+  if (!sessions.length) return null
+
+  return (
+    <section className="mx-auto mt-8 w-full max-w-5xl">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-xs uppercase tracking-[0.2em] text-gray-600">Recent sessions</h2>
+        <span className="text-xs text-gray-700">Open one to review previous work</span>
+      </div>
+      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+        {sessions.slice(0, 6).map(session => (
+          <button
+            key={session.session_id}
+            type="button"
+            onClick={() => onSelect(session)}
+            className={`min-w-0 rounded-xl border p-3 text-left transition ${
+              activeSessionId === session.session_id
+                ? 'border-red-500/60 bg-red-500/10'
+                : 'border-gray-800 bg-gray-950/70 hover:border-gray-700'
+            }`}
+          >
+            <div className="truncate text-sm font-medium text-gray-100">
+              {session.params?.creative_brief || session.params?.target_description || session.session_id}
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-3 text-xs text-gray-600">
+              <span>{session.current_iteration ?? 0} iterations</span>
+              <span>{session.best_score > 0 ? `best ${session.best_score.toFixed(3)}` : session.status}</span>
+            </div>
+          </button>
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -175,6 +108,15 @@ export default function AgentTab() {
   const [loadError, setLoadError] = useState(null)
   const pollRef = useRef(null)
 
+  const refreshSessions = () => {
+    getAgentSessions()
+      .then(result => setPastSessions(result.sessions ?? []))
+      .catch((err) => {
+        console.warn('Failed to load agent sessions:', err)
+        setLoadError('Past agent sessions could not be loaded.')
+      })
+  }
+
   useEffect(() => {
     getConfig()
       .then(setConfig)
@@ -182,28 +124,28 @@ export default function AgentTab() {
         console.warn('Failed to load agent config:', err)
         setLoadError('Agent configuration could not be loaded.')
       })
-    getAgentSessions()
-      .then(r => setPastSessions(r.sessions ?? []))
-      .catch((err) => {
-        console.warn('Failed to load agent sessions:', err)
-        setLoadError('Past agent sessions could not be loaded.')
-      })
+    refreshSessions()
   }, [])
 
   useEffect(() => {
     if (pollRef.current) clearInterval(pollRef.current)
     if (!activeSessionId) return
+
     const poll = async () => {
       try {
         const data = await getAgentSession(activeSessionId)
         setSessionData(data)
         setLoadError(null)
-        if (!data.is_running) clearInterval(pollRef.current)
+        if (!data.is_running) {
+          clearInterval(pollRef.current)
+          refreshSessions()
+        }
       } catch (err) {
         console.warn('Failed to refresh agent session:', err)
         setLoadError('Live agent session status could not be refreshed.')
       }
     }
+
     poll()
     pollRef.current = setInterval(poll, 3000)
     return () => clearInterval(pollRef.current)
@@ -213,7 +155,7 @@ export default function AgentTab() {
     const { session_id } = await startAgentSession(form)
     setLoadError(null)
     setActiveSessionId(session_id)
-    setSessionData(null)
+    setSessionData({ session_id, params: form, status: 'running', is_running: true })
     setSelectedIteration(null)
   }
 
@@ -235,80 +177,56 @@ export default function AgentTab() {
     setSelectedIteration(null)
   }
 
+  const handleNewSession = () => {
+    setActiveSessionId(null)
+    setSessionData(null)
+    setSelectedIteration(null)
+    refreshSessions()
+  }
+
+  if (!activeSessionId) {
+    return (
+      <div className="flex-1 overflow-y-auto bg-gray-950 px-5 py-8">
+        {loadError && (
+          <p className="mx-auto mb-5 max-w-5xl rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200" role="alert">
+            {loadError}
+          </p>
+        )}
+        <ConfigForm config={config} onStart={handleStart} />
+        <RecentSessions
+          sessions={pastSessions}
+          activeSessionId={activeSessionId}
+          onSelect={handleSelectPast}
+        />
+      </div>
+    )
+  }
+
   return (
-    <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-      <GenerateStatusStrip sessionId={activeSessionId} session={sessionData} />
-
-      <div className="flex-1 flex min-h-0 overflow-hidden">
-        {/* Left rail - config or live status + past sessions */}
-        <div className="w-72 flex-shrink-0 border-r border-gray-800 flex flex-col overflow-y-auto">
-          <div className="p-4 border-b border-gray-800">
-            {loadError && (
-              <p className="mb-3 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200" role="alert">
-                {loadError}
-              </p>
-            )}
-            {activeSessionId && sessionData ? (
-              <>
-                <LiveSessionHeader session={sessionData} onStop={handleStop} />
-                <button
-                  onClick={() => { setActiveSessionId(null); setSessionData(null); setSelectedIteration(null) }}
-                  className="mt-4 text-xs text-gray-600 hover:text-gray-400 transition"
-                >
-                  Back to new session
-                </button>
-              </>
-            ) : (
-              <ConfigForm config={config} onStart={handleStart} />
-            )}
-          </div>
-
-          {pastSessions.length > 0 && (
-            <div className="p-4">
-              <p className="text-xs text-gray-500 mb-2 uppercase tracking-wider">Past sessions</p>
-              <div className="flex flex-col gap-1.5">
-                {pastSessions.slice(0, 10).map(s => (
-                  <button
-                    key={s.session_id}
-                    onClick={() => handleSelectPast(s)}
-                    className={`text-left px-2.5 py-2 rounded-md text-xs transition border ${
-                      activeSessionId === s.session_id
-                        ? 'border-red-500/50 bg-red-500/10 text-white'
-                        : 'border-gray-800 hover:border-gray-700 text-gray-400'
-                    }`}
-                  >
-                    <div className="font-medium truncate">
-                      {s.params?.creative_brief || s.params?.target_description || s.session_id}
-                    </div>
-                    <div className="text-gray-600 mt-0.5">
-                      {s.current_iteration ?? s.iterations?.length ?? 0} iter
-                      {s.best_score > 0 && ` - best ${s.best_score.toFixed(3)}`}
-                      {s.status && ` - ${s.status}`}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Center - live artifact canvas */}
-        <div className="flex-1 min-w-0 flex flex-col min-h-0 border-r border-gray-800">
-          <ArtifactCanvas
-            sessionId={activeSessionId}
-            iteration={selectedIteration}
-            setIteration={setSelectedIteration}
-            sessionData={sessionData}
-          />
-        </div>
-
-        {/* Right rail - user notes (top) + log feed (bottom) */}
-        <div className="w-80 flex-shrink-0 flex flex-col min-h-0 bg-gray-950">
-          {activeSessionId && (
-            <UserNotes sessionId={activeSessionId} disabled={!sessionData?.is_running} />
-          )}
-          <LogFeed key={activeSessionId || 'no-session'} sessionId={activeSessionId} isRunning={sessionData?.is_running ?? false} />
-        </div>
+    <div className="flex flex-1 flex-col overflow-hidden bg-gray-950">
+      <RunHeader
+        sessionId={activeSessionId}
+        session={sessionData}
+        onStop={handleStop}
+        onNewSession={handleNewSession}
+      />
+      {loadError && (
+        <p className="mx-5 mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200" role="alert">
+          {loadError}
+        </p>
+      )}
+      <div className="grid flex-1 min-h-0 gap-4 overflow-hidden p-4 lg:grid-cols-[minmax(360px,0.9fr)_minmax(520px,1.3fr)]">
+        <AgentTranscript
+          sessionId={activeSessionId}
+          sessionData={sessionData}
+          onStop={handleStop}
+        />
+        <ArtifactCanvas
+          sessionId={activeSessionId}
+          iteration={selectedIteration}
+          setIteration={setSelectedIteration}
+          sessionData={sessionData}
+        />
       </div>
     </div>
   )
