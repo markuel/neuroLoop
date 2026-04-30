@@ -19,6 +19,7 @@ const STEP_LABELS = {
 
 function phaseLabel(session) {
   if (!session) return 'Starting agent session'
+  if (session.is_running !== true && session.status !== 'running') return 'Session history'
   return STEP_LABELS[session.step] || session.status_detail || session.status || 'Working'
 }
 
@@ -130,6 +131,8 @@ export default function AgentTab() {
   useEffect(() => {
     if (pollRef.current) clearInterval(pollRef.current)
     if (!activeSessionId) return
+    const isLiveSession = !sessionData || sessionData.is_running === true || sessionData.status === 'running'
+    if (!isLiveSession) return
 
     const poll = async () => {
       try {
@@ -149,7 +152,7 @@ export default function AgentTab() {
     poll()
     pollRef.current = setInterval(poll, 3000)
     return () => clearInterval(pollRef.current)
-  }, [activeSessionId])
+  }, [activeSessionId, sessionData?.is_running, sessionData?.status])
 
   const handleStart = async (form) => {
     const { session_id } = await startAgentSession(form)
@@ -220,12 +223,14 @@ export default function AgentTab() {
           sessionId={activeSessionId}
           sessionData={sessionData}
           onStop={handleStop}
+          live={sessionData?.is_running === true}
         />
         <ArtifactCanvas
           sessionId={activeSessionId}
           iteration={selectedIteration}
           setIteration={setSelectedIteration}
           sessionData={sessionData}
+          live={sessionData?.is_running === true}
         />
       </div>
     </div>

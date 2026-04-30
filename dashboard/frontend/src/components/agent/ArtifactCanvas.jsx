@@ -10,7 +10,7 @@ const STEPS = [
   ['score', 'Score'],
 ]
 
-function useArtifacts(sessionId) {
+function useArtifacts(sessionId, live) {
   const [artifactState, setArtifactState] = useState({ sessionId: null, byIter: {} })
   const [errorState, setErrorState] = useState({ sessionId: null, message: null })
 
@@ -44,10 +44,14 @@ function useArtifacts(sessionId) {
     }
     es.addEventListener('done', () => es.close())
     es.onerror = () => {
+      if (!live) {
+        es.close()
+        return
+      }
       setErrorState({ sessionId, message: 'Live artifact stream disconnected. Reconnecting...' })
     }
     return () => es.close()
-  }, [sessionId])
+  }, [sessionId, live])
 
   return {
     byIter: artifactState.sessionId === sessionId ? artifactState.byIter : {},
@@ -525,8 +529,8 @@ function DebugFiles({ iterData }) {
   )
 }
 
-export default function ArtifactCanvas({ sessionId, iteration, setIteration, sessionData }) {
-  const { byIter, error: artifactError } = useArtifacts(sessionId)
+export default function ArtifactCanvas({ sessionId, iteration, setIteration, sessionData, live }) {
+  const { byIter, error: artifactError } = useArtifacts(sessionId, live)
   const [selectedId, setSelectedId] = useState(null)
 
   const availableIters = useMemo(

@@ -3,6 +3,31 @@ import {
   createDraftSession, uploadReference, deleteReference, agentArtifactUrl,
 } from '../../utils/api'
 
+function UploadIcon({ busy }) {
+  if (busy) {
+    return (
+      <span className="h-10 w-10 rounded-full border-2 border-gray-700 border-t-gray-200 animate-spin" />
+    )
+  }
+
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className="h-14 w-14 text-gray-300"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 16V7" />
+      <path d="m8.5 10.5 3.5-3.5 3.5 3.5" />
+      <path d="M20 16.5a4 4 0 0 0-3.6-4 5 5 0 0 0-9.7-1.4A3.8 3.8 0 0 0 4 18h13" />
+    </svg>
+  )
+}
+
 export default function ConfigForm({ config, onStart }) {
   const formId = useId()
   const targetId = `${formId}-target`
@@ -89,15 +114,6 @@ export default function ConfigForm({ config, onStart }) {
 
   return (
     <form onSubmit={handleSubmit} className="mx-auto flex w-full max-w-5xl flex-col gap-6">
-      <div className="space-y-2">
-        <div className="text-xs uppercase tracking-[0.24em] text-gray-600">Generate Video</div>
-        <h1 className="text-3xl font-semibold text-white md:text-4xl">Tell the agent what brain state to chase.</h1>
-        <p className="max-w-2xl text-sm leading-relaxed text-gray-400">
-          Start with the desired viewer state, then give the creative direction. The agent will plan frames,
-          generate clips, score them with TRIBE, and iterate.
-        </p>
-      </div>
-
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="rounded-xl border border-gray-800 bg-gray-950/80 p-4 shadow-2xl shadow-black/30">
           <label htmlFor={targetId} className="mb-2 block text-sm font-medium text-gray-200">
@@ -113,7 +129,7 @@ export default function ConfigForm({ config, onStart }) {
           />
 
           <label htmlFor={briefId} className="mb-2 mt-5 block text-sm font-medium text-gray-200">
-            Creative brief
+            Video prompt
           </label>
           <textarea
             id={briefId}
@@ -139,10 +155,10 @@ export default function ConfigForm({ config, onStart }) {
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              className="flex aspect-[4/3] w-full flex-col items-center justify-center rounded-lg border border-gray-800 bg-black/30 px-4 text-center text-sm text-gray-500 transition hover:border-gray-600 hover:text-gray-300 focus:border-red-500 focus:outline-none"
+              className="flex aspect-[4/3] w-full items-center justify-center rounded-lg border border-gray-800 bg-black/30 px-4 text-gray-500 transition hover:border-gray-600 hover:bg-gray-900/50 hover:text-gray-300 focus:border-red-500 focus:outline-none"
+              aria-label="Upload reference images"
             >
-              <span className="text-lg text-gray-300">{uploading ? 'Uploading...' : 'Drop or click'}</span>
-              <span className="mt-1 text-xs text-gray-600">Images are saved with this draft session.</span>
+              <UploadIcon busy={uploading} />
             </button>
             <input
               ref={fileRef}

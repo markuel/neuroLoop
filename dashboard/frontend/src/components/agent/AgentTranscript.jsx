@@ -42,7 +42,7 @@ function eventLabel(event) {
   return event.event?.replace(/^claude\./, '') || 'event'
 }
 
-function useAgentEvents(sessionId) {
+function useAgentEvents(sessionId, live) {
   const [events, setEvents] = useState([])
   const [error, setError] = useState(null)
 
@@ -63,10 +63,14 @@ function useAgentEvents(sessionId) {
     }
     es.addEventListener('done', () => es.close())
     es.onerror = () => {
+      if (!live) {
+        es.close()
+        return
+      }
       setError('Agent event stream disconnected. Reconnecting...')
     }
     return () => es.close()
-  }, [sessionId])
+  }, [sessionId, live])
 
   return { events, error }
 }
@@ -187,8 +191,8 @@ function RawLog({ sessionId }) {
   )
 }
 
-export default function AgentTranscript({ sessionId, sessionData, onStop }) {
-  const { events, error } = useAgentEvents(sessionId)
+export default function AgentTranscript({ sessionId, sessionData, onStop, live }) {
+  const { events, error } = useAgentEvents(sessionId, live)
   const [draft, setDraft] = useState('')
   const [notes, setNotes] = useState([])
   const [sending, setSending] = useState(false)
